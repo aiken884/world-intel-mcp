@@ -29,7 +29,7 @@
 | 介面 | 做法 |
 |---|---|
 | CLI（`cli.py`） | Click `help=`、Rich 表格欄名、提示／錯誤訊息改走 `t()`。Click 的說明在 import 時求值，所以語系只由環境變數決定（`--lang` 由 launcher 在 import 前寫入環境變數）。 |
-| 儀表板 | `app.py` 在回應 `index.html` 時注入 `window.__I18N__ = {...}`（僅 zh-TW 字典，英文時為空）與 `<html lang>`；前端新增小型 `t()`，JS 動態產生的字串走 `t()`，靜態文字節點與 `placeholder`／`title` 由載入時的 walker 依字典替換。 |
+| 儀表板 | `app.py` 在回應 `index.html` 時注入 `window.__I18N__ = {...}`（僅 zh-TW 字典，英文時為空）與 `<html lang>`；前端新增小型 `_t()`；靜態文字節點與 `placeholder`／`title`／`aria-label` 由載入時的 walker 依字典替換，並以 `MutationObserver` 持續翻譯動態插入的節點（完整相符才替換）；與資料串接的字串走 `_t(msgid, vars)`。注入的字典僅含 `DASHBOARD` 段。 |
 | 報告／摘要 | `reports.py` 的 `<h2>` 標題與 `daily_digest.py` 的 Markdown 標題走 `t()`；`situation.py` 的 Ollama 提示語在 zh-TW 時加入「以台灣繁體中文輸出」，備援（機械式摘要）文字同樣走 `t()`。 |
 
 ## 三、測試與品質把關
