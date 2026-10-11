@@ -211,7 +211,10 @@ def test_hud_label_text_is_no_longer_used_as_a_lookup_key():
 
 
 def test_hud_stat_pills_carry_their_layer_key(tmp_path):
-    fn = _slice("function updateHudStats(data) {", "// ════════════ DATA DRAWER")
+    # The pills read the time window through the shared filter helpers.
+    fn = _slice(
+        "// ════════════ REGION & TIME FILTERS", "// ════════════ END REGION & TIME FILTERS"
+    ) + _slice("function updateHudStats(data) {", "// ════════════ DATA DRAWER")
     script = (
         f"const SRC = {json.dumps(fn)};\n"
         r"""

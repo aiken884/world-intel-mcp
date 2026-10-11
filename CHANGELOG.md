@@ -32,6 +32,15 @@
   one-line command.
 
 ### Fixed
+- Dashboard REGION and TIME WINDOW buttons did nothing (upstream never wired
+  them). Region buttons now fit the map to Americas / Europe / MENA /
+  Asia-Pacific / Africa, or back to the globe. Time-window buttons (1h / 6h /
+  24h / 7d / All) now filter earthquakes, news (map, ticker) and conflict
+  events, and redraw from the loaded data without refetching; live flights
+  and static layers are not filtered. Both choices persist in localStorage.
+  Behaviour change: the window was hard-coded to 7 days while the UI showed
+  24h as active, so the default 24h now really means 24 hours (pick 7d for the
+  old view). Date-only conflict dates count as the end of that UTC day.
 - Dashboard basemap: CARTO `dark_all` tiles now answer every request with an
   "API KEY REQUIRED" watermark tile, so the map is switched to OpenStreetMap
   standard tiles (no key; attribution shown; darkened with a CSS filter).

@@ -630,6 +630,7 @@ DASHBOARD: dict[str, str] = {
     'Air Traffic': '航空交通',
     'All': '全部',
     'Americas': '美洲',
+    'Applies to: Earthquakes, News, Conflict events': '套用於：地震、新聞、衝突事件',
     'Asia-Pac': '亞太',
     'CONNECTING': '連線中',
     'Climate': '氣候',

@@ -762,22 +762,22 @@ a { color: var(--accent); text-decoration: none; }
     <div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:6px">
         <div style="font-size:0.55rem;letter-spacing:1px;color:rgba(255,255,255,0.35);margin-bottom:4px">REGION</div>
         <div id="regionPresets" style="display:flex;flex-wrap:wrap;gap:2px">
-            <button class="rgn-btn active" data-region="global">Globe</button>
-            <button class="rgn-btn" data-region="americas">Americas</button>
-            <button class="rgn-btn" data-region="europe">Europe</button>
-            <button class="rgn-btn" data-region="mena">MENA</button>
-            <button class="rgn-btn" data-region="asia">Asia-Pac</button>
-            <button class="rgn-btn" data-region="africa">Africa</button>
+            <button class="rgn-btn active" data-region="global" aria-pressed="true">Globe</button>
+            <button class="rgn-btn" data-region="americas" aria-pressed="false">Americas</button>
+            <button class="rgn-btn" data-region="europe" aria-pressed="false">Europe</button>
+            <button class="rgn-btn" data-region="mena" aria-pressed="false">MENA</button>
+            <button class="rgn-btn" data-region="asia" aria-pressed="false">Asia-Pac</button>
+            <button class="rgn-btn" data-region="africa" aria-pressed="false">Africa</button>
         </div>
     </div>
     <div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:6px">
-        <div style="font-size:0.55rem;letter-spacing:1px;color:rgba(255,255,255,0.35);margin-bottom:4px">TIME WINDOW</div>
-        <div id="timeFilter" style="display:flex;gap:2px">
-            <button class="rgn-btn" data-hours="1">1h</button>
-            <button class="rgn-btn" data-hours="6">6h</button>
-            <button class="rgn-btn active" data-hours="24">24h</button>
-            <button class="rgn-btn" data-hours="168">7d</button>
-            <button class="rgn-btn" data-hours="0">All</button>
+        <div style="font-size:0.55rem;letter-spacing:1px;color:rgba(255,255,255,0.35);margin-bottom:4px" title="Applies to: Earthquakes, News, Conflict events">TIME WINDOW</div>
+        <div id="timeFilter" style="display:flex;gap:2px" title="Applies to: Earthquakes, News, Conflict events">
+            <button class="rgn-btn" data-hours="1" aria-pressed="false">1h</button>
+            <button class="rgn-btn" data-hours="6" aria-pressed="false">6h</button>
+            <button class="rgn-btn active" data-hours="24" aria-pressed="true">24h</button>
+            <button class="rgn-btn" data-hours="168" aria-pressed="false">7d</button>
+            <button class="rgn-btn" data-hours="0" aria-pressed="false">All</button>
         </div>
     </div>
 </aside>
@@ -840,7 +840,174 @@ function cls(n) { return n == null ? '' : n >= 0 ? 'up' : 'down'; }
 function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 function trunc(s, n) { n = n || 50; s = s || ''; return s.length > n ? s.slice(0, n) + '\u2026' : s; }
 function ago(ts) { if (!ts) return '\u2014'; var s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000); if (s < 60) return s + 's'; if (s < 3600) return Math.floor(s/60) + 'm'; if (s < 86400) return Math.floor(s/3600) + 'h'; return Math.floor(s/86400) + 'd'; }
-function _withinTimeWindow(ts) { if (!ts) return true; var age = Date.now() - new Date(ts).getTime(); return age < 7 * 86400000; }
+
+// ════════════ REGION & TIME FILTERS ════════════
+// The REGION and TIME WINDOW buttons in the layer panel.  Buttons are matched
+// by their data-region / data-hours attribute, never by their label: the
+// zh-TW translator rewrites the visible text.
+var REGION_BOUNDS = {
+    americas: [[-56, -170], [72, -30]],
+    europe:   [[34, -25], [72, 45]],
+    mena:     [[12, -18], [42, 63]],
+    asia:     [[-10, 60], [50, 180]],
+    africa:   [[-35, -20], [38, 52]]
+};
+var REGION_GLOBAL_VIEW = { center: [20, 0], zoom: 2.5 };
+var REGION_PREF_KEY = 'phoenix-region';
+var HOURS_PREF_KEY = 'phoenix-hours';
+var VALID_HOURS = [1, 6, 24, 168, 0];   // 0 = no limit
+var DEFAULT_REGION = 'global';
+var DEFAULT_HOURS = 24;
+
+function _readPref(key) {
+    try { return localStorage.getItem(key); } catch(e) { return null; }
+}
+function _writePref(key, value) {
+    try { localStorage.setItem(key, String(value)); } catch(e) {}
+}
+function _savedRegion() {
+    var v = _readPref(REGION_PREF_KEY);
+    return (v === DEFAULT_REGION || (v && REGION_BOUNDS.hasOwnProperty(v))) ? v : DEFAULT_REGION;
+}
+function _savedHours() {
+    var v = _readPref(HOURS_PREF_KEY);
+    var n = v == null ? NaN : parseInt(v, 10);
+    return (String(n) === v && VALID_HOURS.indexOf(n) >= 0) ? n : DEFAULT_HOURS;
+}
+
+var _timeWindowHours = _savedHours();
+
+// Timestamp -> epoch ms.  Date-only values (ACLED event_date, UCDP date_start
+// at midnight) only know the day, so they count as the END of that UTC day;
+// reading them as 00:00 would drop today's events from every short window.
+function _tsMs(ts) {
+    if (typeof ts !== 'string') return new Date(ts).getTime();
+    var s = ts.trim();
+    if (/^\d{4}-\d{2}-\d{2}(?:[T ]00:00:00(?:\.0+)?)?$/.test(s)) {
+        return Date.parse(s.slice(0, 10) + 'T00:00:00Z') + 86399999;
+    }
+    return new Date(s).getTime();
+}
+// Missing or unreadable timestamps stay in range: a window must never
+// silently drop data it cannot judge.
+function _withinTimeWindow(ts) {
+    if (!ts || !_timeWindowHours) return true;
+    var ms = _tsMs(ts);
+    if (isNaN(ms)) return true;
+    return Date.now() - ms < _timeWindowHours * 3600000;
+}
+
+// Which conflict feed the layer / HUD / search read (ACLED, then UCDP, then
+// the static hotspot fallback).
+function _conflictSource(data) {
+    if (!data) return null;
+    if (data.acled_events && !data.acled_events.error && data.acled_events.count > 0) return data.acled_events;
+    if (data.ucdp_events && !data.ucdp_events.error && data.ucdp_events.count > 0) return data.ucdp_events;
+    return data.conflict_zones;
+}
+function _windowQuakes(eq) {
+    return ((eq && eq.earthquakes) || []).filter(function(q) { return _withinTimeWindow(q.time || q.timestamp); });
+}
+function _windowConflictEvents(src) {
+    return ((src && src.events) || []).filter(function(e) { return _withinTimeWindow(e.event_date || e.date_start); });
+}
+// The feed's own total survives only while the window dropped nothing.
+function _windowConflictCount(src) {
+    var all = (src && src.events) || [];
+    var kept = _windowConflictEvents(src);
+    return kept.length === all.length ? (src.count || kept.length) : kept.length;
+}
+function _windowArticles(arts) {
+    return (arts || []).filter(function(a) { return _withinTimeWindow(a.published || a.pub_date || a.timestamp); });
+}
+
+function _syncButtonGroup(selector, attr, value) {
+    $$(selector).forEach(function(b) {
+        var on = b.getAttribute(attr) === String(value);
+        if (on) b.classList.add('active'); else b.classList.remove('active');
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+}
+
+// Leave room for the floating panels so the region is not drawn under them.
+function _mapInsets() {
+    var tl = [20, 20], br = [20, 20];
+    try {
+        var W = window.innerWidth, H = window.innerHeight;
+        var layers = document.getElementById('layers');
+        var bar = document.getElementById('topBar');
+        var tick = document.getElementById('ticker');
+        var drw = document.getElementById('drawer');
+        if (layers) tl[0] = Math.max(tl[0], Math.round(layers.getBoundingClientRect().right) + 12);
+        if (bar) tl[1] = Math.max(tl[1], Math.round(bar.getBoundingClientRect().bottom) + 12);
+        if (tick) br[1] = Math.max(br[1], Math.round(H - tick.getBoundingClientRect().top) + 12);
+        if (drw && !drw.classList.contains('closed')) {
+            br[0] = Math.max(br[0], Math.round(W - drw.getBoundingClientRect().left) + 12);
+        }
+        // A tiny window must not end up with all of its area as padding.
+        if (tl[0] + br[0] > W * 0.6 || tl[1] + br[1] > H * 0.6) { tl = [20, 20]; br = [20, 20]; }
+    } catch(e) { tl = [20, 20]; br = [20, 20]; }
+    return { tl: tl, br: br };
+}
+
+function _setRegion(key, opts) {
+    opts = opts || {};
+    if (key !== DEFAULT_REGION && !REGION_BOUNDS.hasOwnProperty(key)) return false;
+    _syncButtonGroup('#regionPresets .rgn-btn', 'data-region', key);
+    if (opts.persist !== false) _writePref(REGION_PREF_KEY, key);
+    if (!map) return true;
+    var animate = opts.animate !== false;
+    if (key === DEFAULT_REGION) {
+        map.setView(REGION_GLOBAL_VIEW.center, REGION_GLOBAL_VIEW.zoom, { animate: animate });
+    } else {
+        var pad = _mapInsets();
+        map.fitBounds(REGION_BOUNDS[key], { paddingTopLeft: pad.tl, paddingBottomRight: pad.br, animate: animate });
+    }
+    return true;
+}
+
+// Re-render the views that read the window from data already in memory.  No
+// refetch and no updateAll(): that would re-add every static layer too.
+function _redrawTimeWindowViews() {
+    var d = latestData;
+    if (!d) return;
+    [
+        ['quakes', function() { updateMapQuakes(d.earthquakes); }],
+        ['conflict', function() { updateMapConflict(_conflictSource(d)); }],
+        ['news', function() { updateMapNews(d.news_feed); }],
+        ['hud', function() { updateHudStats(d); }],
+        ['ticker', function() { updateTicker(d); }]
+    ].forEach(function(p) {
+        try { p[1](); } catch(e) { console.warn('time window redraw: ' + p[0] + ' failed:', e); }
+    });
+    if (typeof _syncLayersTop === 'function') setTimeout(_syncLayersTop, 50);
+}
+
+function _setTimeWindow(hours, opts) {
+    opts = opts || {};
+    if (VALID_HOURS.indexOf(hours) < 0) return false;
+    _timeWindowHours = hours;
+    _syncButtonGroup('#timeFilter .rgn-btn', 'data-hours', hours);
+    if (opts.persist !== false) _writePref(HOURS_PREF_KEY, hours);
+    _redrawTimeWindowViews();
+    return true;
+}
+
+// Called once, right after initMap().
+function _initFilters() {
+    $$('#regionPresets .rgn-btn').forEach(function(b) {
+        b.addEventListener('click', function() { _setRegion(b.getAttribute('data-region')); });
+    });
+    $$('#timeFilter .rgn-btn').forEach(function(b) {
+        b.addEventListener('click', function() { _setTimeWindow(parseInt(b.getAttribute('data-hours'), 10)); });
+    });
+    var region = _savedRegion();
+    _syncButtonGroup('#timeFilter .rgn-btn', 'data-hours', _timeWindowHours);
+    _syncButtonGroup('#regionPresets .rgn-btn', 'data-region', region);
+    // The map already starts on the globe; only a saved region needs a move.
+    if (region !== DEFAULT_REGION) _setRegion(region, { animate: false, persist: false });
+}
+// ════════════ END REGION & TIME FILTERS ════════════
 
 // ════════════ I18N ════════════
 // window.__I18N__ is injected by the server (empty for English). _t() is for
@@ -1704,9 +1871,7 @@ document.addEventListener('keydown', function(e) {
 function updateMapQuakes(data) {
     mapLayers.quakes.clearLayers();
     if (!data || data.error) { $('#cntQuakes').textContent = '0'; return; }
-    var quakes = (data.earthquakes || []).filter(function(q) {
-        return _withinTimeWindow(q.time || q.timestamp);
-    });
+    var quakes = _windowQuakes(data);
     $('#cntQuakes').textContent = quakes.length;
     quakes.slice(0, 100).forEach(function(q) {
         if (q.latitude == null || q.longitude == null) return;
@@ -1740,8 +1905,8 @@ function updateMapMilitary(data) {
 function updateMapConflict(data) {
     mapLayers.conflict.clearLayers();
     if (!data || data.error) { $('#cntConflict').textContent = '0'; return; }
-    var events = data.events || [];
-    $('#cntConflict').textContent = data.count || events.length;
+    var events = _windowConflictEvents(data);
+    $('#cntConflict').textContent = _windowConflictCount(data);
     events.slice(0, 200).forEach(function(e) {
         var lat = e.latitude || e.lat, lon = e.longitude || e.lon;
         if (lat == null || lon == null) return;
@@ -2130,17 +2295,17 @@ function _geolocateArticle(article) {
 function updateMapNews(data) {
     mapLayers.news.clearLayers();
     if (!data || data.error) { $('#cntNews').textContent = '0'; return; }
-    var articles = (data.articles || data.items || []).filter(function(a) {
-        return _withinTimeWindow(a.published || a.pub_date || a.timestamp);
-    });
+    var articles = _windowArticles(data.articles || data.items);
     var placed = 0;
     articles.forEach(function(a) {
         var geo = _geolocateArticle(a);
         if (!geo) return;
         placed++;
-        // Jitter to avoid exact overlap
-        var jlat = geo.lat + (Math.random() - 0.5) * 2;
-        var jlon = geo.lon + (Math.random() - 0.5) * 2;
+        // Jitter to avoid exact overlap; keep it across redraws (time window
+        // changes) so markers do not hop.
+        var kept = a._geo_country === geo.country && a._geo_lat != null && a._geo_lon != null;
+        var jlat = kept ? a._geo_lat : geo.lat + (Math.random() - 0.5) * 2;
+        var jlon = kept ? a._geo_lon : geo.lon + (Math.random() - 0.5) * 2;
         a._geo_country = geo.country;
         a._geo_lat = jlat;
         a._geo_lon = jlon;
@@ -2179,17 +2344,15 @@ function updateAlertBanner(data) {
 function updateHudStats(data) {
     var pills = [];
     if (data.earthquakes && !data.earthquakes.error) {
-        var qc = (data.earthquakes.earthquakes || []).length;
+        var qc = _windowQuakes(data.earthquakes).length;
         pills.push('<div class="stat-pill" data-layer="quakes"><span class="v">' + qc + '</span><span class="l">Quakes</span></div>');
     }
     if (data.military_flights && !data.military_flights.error) {
         pills.push('<div class="stat-pill" data-layer="military"><span class="v">' + (data.military_flights.count || 0) + '</span><span class="l">Aircraft</span></div>');
     }
-    var conflictSrc = (data.acled_events && !data.acled_events.error && data.acled_events.count > 0) ? data.acled_events
-        : (data.ucdp_events && !data.ucdp_events.error && data.ucdp_events.count > 0) ? data.ucdp_events
-        : data.conflict_zones;
+    var conflictSrc = _conflictSource(data);
     if (conflictSrc && !conflictSrc.error) {
-        var ac = conflictSrc.count || 0;
+        var ac = _windowConflictCount(conflictSrc);
         pills.push('<div class="stat-pill" data-layer="conflict"><span class="v' + (ac > 100 ? ' warn' : '') + '">' + ac + '</span><span class="l">Conflict</span></div>');
     }
     if (data.cyber_threats && !data.cyber_threats.error) {
@@ -3069,6 +3232,8 @@ function updateTicker(data) {
     if (!data.news_feed || data.news_feed.error) return;
     var articles = data.news_feed.articles || data.news_feed.items || [];
     if (!articles.length) return;
+    articles = _windowArticles(articles);
+    if (!articles.length) { $('#tickerContent').innerHTML = ''; return; }
     var items = articles.slice(0, 30).map(function(a) {
         return '<span class="ticker-item">' + esc(trunc(a.title || '?', 70)) + '<span class="src">' + esc(a.feed_name || a.source || a.feed || '') + '</span></span>';
     });
@@ -3093,9 +3258,7 @@ function updateAll(data) {
     _writeCacheEnvelope(DASHBOARD_CACHE_KEY, data);
 
     // Map layers (each wrapped to prevent cascade failures)
-    var conflictData = (data.acled_events && !data.acled_events.error && data.acled_events.count > 0) ? data.acled_events
-        : (data.ucdp_events && !data.ucdp_events.error && data.ucdp_events.count > 0) ? data.ucdp_events
-        : data.conflict_zones;
+    var conflictData = _conflictSource(data);
     var mapUpdates = [
         ['quakes', function() { updateMapQuakes(data.earthquakes); }],
         ['military', function() { updateMapMilitary(data.military_flights); }],
@@ -3200,6 +3363,7 @@ function connectSSE() {
 
 // ════════════ BOOT ════════════
 initMap();
+_initFilters();
 
 // Restore saved layer visibility
 (function() {
@@ -3293,13 +3457,11 @@ function performSearch(q) {
             if (_matchText(it, q) && it[latK] != null && it[lonK] != null) coords.push([Number(it[latK]), Number(it[lonK])]);
         });
     }
-    _scan((latestData.earthquakes || {}).earthquakes, 'latitude', 'longitude');
+    _scan(_windowQuakes(latestData.earthquakes), 'latitude', 'longitude');
     _scan((latestData.military_flights || {}).aircraft, 'latitude', 'longitude');
-    var cSrc = (latestData.acled_events && !latestData.acled_events.error && (latestData.acled_events.count||0) > 0) ? latestData.acled_events
-        : (latestData.ucdp_events && !latestData.ucdp_events.error && (latestData.ucdp_events.count||0) > 0) ? latestData.ucdp_events
-        : latestData.conflict_zones;
-    _scan((cSrc || {}).events, 'latitude', 'longitude');
-    _scan((cSrc || {}).events, 'lat', 'lon');
+    var cEvents = _windowConflictEvents(_conflictSource(latestData));
+    _scan(cEvents, 'latitude', 'longitude');
+    _scan(cEvents, 'lat', 'lon');
     var fbr = (latestData.wildfires || {}).fires_by_region || {};
     for (var rk in fbr) { if (fbr.hasOwnProperty(rk)) { (fbr[rk].top_clusters || []).forEach(function(c) { if (rk.toLowerCase().indexOf(q) >= 0 && c.lat != null) coords.push([c.lat, c.lon]); }); } }
     _scan((latestData.signal_convergence || {}).hotspots, 'lat', 'lon');
@@ -3316,7 +3478,7 @@ function performSearch(q) {
     if (!Array.isArray(climZones) && typeof climZones === 'object') climZones = Object.values(climZones);
     _scan(climZones, 'lat', 'lon');
     // News articles with geolocation
-    var newsArticles = (latestData.news_feed || {}).articles || (latestData.news_feed || {}).items || [];
+    var newsArticles = _windowArticles((latestData.news_feed || {}).articles || (latestData.news_feed || {}).items);
     newsArticles.forEach(function(a) { if (a._geo_lat && _matchText(a, q)) coords.push([a._geo_lat, a._geo_lon]); });
     if (coords.length > 0) {
         map.fitBounds(L.latLngBounds(coords), { padding: [60, 60], maxZoom: coords.length === 1 ? 10 : 6 });
