@@ -863,7 +863,7 @@ DASHBOARD: dict[str, str] = {
     'Dist': '距離',
     'Lab Activity': '實驗室動態',
     'Paper/Post': '論文／貼文',
-    'Age': '時間',
+    'Age': '經過時間',
     'Loading AI feeds...': '載入 AI 來源中…',
     'HEALTH': '健康',
     'Org': '組織',
