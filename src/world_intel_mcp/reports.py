@@ -18,6 +18,7 @@ from typing import Any
 from .cache import Cache
 from .circuit_breaker import CircuitBreaker
 from .fetcher import Fetcher
+from .i18n import get_locale, t
 from .sources import (
     markets,
     seismology,
@@ -155,6 +156,22 @@ tr:nth-child(even) td { background: #f8f9fa; }
 """
 
 
+def _localized_css() -> str:
+    """Page chrome lives in CSS ``content:`` strings; swap them per locale."""
+    css = _CSS.replace(
+        '"Page " counter(page) " of " counter(pages)',
+        t('"Page " counter(page) " of " counter(pages)'),
+    ).replace('"WORLD INTELLIGENCE REPORT"', t('"WORLD INTELLIGENCE REPORT"'))
+    if get_locale() == "zh-TW":
+        css = css.replace(
+            "Arial, sans-serif;",
+            "Arial, 'PingFang TC', 'Noto Sans TC', 'Noto Sans CJK TC', "
+            "'Microsoft JhengHei', sans-serif;",
+            1,
+        )
+    return css
+
+
 def _esc(text: Any) -> str:
     """Escape HTML special chars."""
     if text is None:
@@ -171,7 +188,7 @@ def _esc(text: Any) -> str:
 def _fmt_num(val: Any, decimals: int = 2) -> str:
     """Format a number with commas."""
     if val is None:
-        return "N/A"
+        return t("N/A")
     try:
         f = float(val)
         if f == int(f) and decimals == 0:
@@ -203,14 +220,14 @@ def _render_markets(data: dict) -> str:
     """Render market quotes section."""
     quotes = data.get("quotes") or data.get("indices") or []
     if not quotes:
-        return '<p class="no-data">Market data unavailable</p>'
+        return f'<p class="no-data">{t("Market data unavailable")}</p>'
 
     rows = []
     for q in quotes[:15]:
         name = _esc(q.get("shortName") or q.get("symbol", ""))
         price = _fmt_num(q.get("regularMarketPrice"))
         chg = q.get("regularMarketChangePercent")
-        chg_str = f"{float(chg):+.2f}%" if chg is not None else "N/A"
+        chg_str = f"{float(chg):+.2f}%" if chg is not None else t("N/A")
         cls = _change_class(chg)
         rows.append(
             f'<tr><td>{name}</td><td>{price}</td><td><span class="metric {cls}">{chg_str}</span></td></tr>'
@@ -218,7 +235,7 @@ def _render_markets(data: dict) -> str:
 
     return f"""
     <table>
-        <tr><th>Index / Symbol</th><th>Price</th><th>Change</th></tr>
+        <tr><th>{t('Index / Symbol')}</th><th>{t('Price')}</th><th>{t('Change')}</th></tr>
         {"".join(rows)}
     </table>"""
 
@@ -227,26 +244,26 @@ def _render_earthquakes(data: dict) -> str:
     """Render seismology section."""
     quakes = data.get("earthquakes", [])
     if not quakes:
-        return '<p class="no-data">No significant seismic activity</p>'
+        return f'<p class="no-data">{t("No significant seismic activity")}</p>'
 
     rows = []
     for q in quakes[:10]:
         props = q.get("properties", {})
         mag = _fmt_num(props.get("mag"), 1)
-        place = _esc(props.get("place", "Unknown"))
-        t = props.get("time")
+        place = _esc(props.get("place", t("Unknown")))
+        quake_ms = props.get("time")
         time_str = (
-            datetime.fromtimestamp(t / 1000, tz=timezone.utc).strftime(
+            datetime.fromtimestamp(quake_ms / 1000, tz=timezone.utc).strftime(
                 "%Y-%m-%d %H:%M UTC"
             )
-            if t
+            if quake_ms
             else ""
         )
         rows.append(f"<tr><td>{mag}</td><td>{place}</td><td>{time_str}</td></tr>")
 
     return f"""
     <table>
-        <tr><th>Mag</th><th>Location</th><th>Time</th></tr>
+        <tr><th>{t('Mag')}</th><th>{t('Location')}</th><th>{t('Time')}</th></tr>
         {"".join(rows)}
     </table>"""
 
@@ -255,7 +272,7 @@ def _render_conflicts(data: dict) -> str:
     """Render conflict events section."""
     events = data.get("events", [])
     if not events:
-        return '<p class="no-data">No recent conflict events</p>'
+        return f'<p class="no-data">{t("No recent conflict events")}</p>'
 
     rows = []
     for e in events[:12]:
@@ -270,7 +287,7 @@ def _render_conflicts(data: dict) -> str:
 
     return f"""
     <table>
-        <tr><th>Type</th><th>Country</th><th>Fatal.</th><th>Date</th><th>Notes</th></tr>
+        <tr><th>{t('Type')}</th><th>{t('Country')}</th><th>{t('Fatal.')}</th><th>{t('Date')}</th><th>{t('Notes')}</th></tr>
         {"".join(rows)}
     </table>"""
 
@@ -279,13 +296,14 @@ def _render_news_clusters(data: dict) -> str:
     """Render top news clusters."""
     clusters = data.get("clusters", [])
     if not clusters:
-        return '<p class="no-data">No news clusters available</p>'
+        return f'<p class="no-data">{t("No news clusters available")}</p>'
 
     items = []
     for c in clusters[:8]:
         title = _esc(c.get("label") or c.get("title", ""))
         count = c.get("article_count", c.get("count", ""))
-        items.append(f"<li><strong>{title}</strong> ({count} articles)</li>")
+        articles = t("({count} articles)", count=count)
+        items.append(f"<li><strong>{title}</strong> {articles}</li>")
     return f"<ul>{''.join(items)}</ul>"
 
 
@@ -293,7 +311,7 @@ def _render_alerts(data: dict) -> str:
     """Render alert digest."""
     alerts = data.get("alerts", [])
     if not alerts:
-        return '<p class="no-data">No active alerts</p>'
+        return f'<p class="no-data">{t("No active alerts")}</p>'
 
     boxes = []
     for a in alerts[:10]:
@@ -311,7 +329,7 @@ def _render_posture(data: dict) -> str:
     """Render strategic posture summary."""
     assessment = data.get("overall_assessment") or data.get("summary", "")
     if not assessment:
-        return '<p class="no-data">Posture data unavailable</p>'
+        return f'<p class="no-data">{t("Posture data unavailable")}</p>'
 
     level = _esc(data.get("threat_level", data.get("risk_level", "")))
     cls = (
@@ -322,12 +340,13 @@ def _render_posture(data: dict) -> str:
         else "green"
     )
 
-    html = f'<span class="metric {cls}">Threat Level: {level}</span>'
+    threat_label = t("Threat Level: {level}", level=level)
+    html = f'<span class="metric {cls}">{threat_label}</span>'
     html += f"<p>{_esc(str(assessment)[:500])}</p>"
 
     regions = data.get("regional_assessments") or data.get("regions", {})
     if regions and isinstance(regions, dict):
-        html += "<h3>Regional Breakdown</h3><ul>"
+        html += f"<h3>{t('Regional Breakdown')}</h3><ul>"
         for region, detail in list(regions.items())[:6]:
             summary = (
                 detail
@@ -345,7 +364,7 @@ def _render_infrastructure(data: dict) -> str:
     """Render infrastructure status."""
     outages = data.get("outages", data.get("entries", []))
     if not outages:
-        return '<p class="no-data">No infrastructure disruptions detected</p>'
+        return f'<p class="no-data">{t("No infrastructure disruptions detected")}</p>'
 
     rows = []
     for o in outages[:8]:
@@ -356,7 +375,7 @@ def _render_infrastructure(data: dict) -> str:
 
     return f"""
     <table>
-        <tr><th>Entity</th><th>Score / Severity</th><th>Source</th></tr>
+        <tr><th>{t('Entity')}</th><th>{t('Score / Severity')}</th><th>{t('Source')}</th></tr>
         {"".join(rows)}
     </table>"""
 
@@ -365,18 +384,18 @@ def _render_cyber(data: dict) -> str:
     """Render cyber threat intelligence."""
     threats = data.get("recent_threats") or data.get("threats", [])
     if not threats:
-        return '<p class="no-data">No recent cyber threats</p>'
+        return f'<p class="no-data">{t("No recent cyber threats")}</p>'
 
     rows = []
-    for t in threats[:8]:
-        name = _esc(t.get("name") or t.get("tag", ""))
-        ttype = _esc(t.get("type", ""))
-        url = _esc(t.get("url", ""))
+    for threat in threats[:8]:
+        name = _esc(threat.get("name") or threat.get("tag", ""))
+        ttype = _esc(threat.get("type", ""))
+        url = _esc(threat.get("url", ""))
         rows.append(f"<tr><td>{name}</td><td>{ttype}</td><td>{url[:60]}</td></tr>")
 
     return f"""
     <table>
-        <tr><th>Threat</th><th>Type</th><th>Reference</th></tr>
+        <tr><th>{t('Threat')}</th><th>{t('Type')}</th><th>{t('Reference')}</th></tr>
         {"".join(rows)}
     </table>"""
 
@@ -385,7 +404,7 @@ def _render_health(data: dict) -> str:
     """Render health/disease outbreak data."""
     outbreaks = data.get("outbreaks") or data.get("events", [])
     if not outbreaks:
-        return '<p class="no-data">No active disease outbreaks</p>'
+        return f'<p class="no-data">{t("No active disease outbreaks")}</p>'
 
     rows = []
     for o in outbreaks[:8]:
@@ -396,7 +415,7 @@ def _render_health(data: dict) -> str:
 
     return f"""
     <table>
-        <tr><th>Disease/Event</th><th>Location</th><th>Date</th></tr>
+        <tr><th>{t('Disease/Event')}</th><th>{t('Location')}</th><th>{t('Date')}</th></tr>
         {"".join(rows)}
     </table>"""
 
@@ -405,7 +424,7 @@ def _render_maritime(data: dict) -> str:
     """Render maritime overview."""
     vessels = data.get("vessels") or data.get("snapshot", [])
     if not vessels:
-        return '<p class="no-data">No maritime data</p>'
+        return f'<p class="no-data">{t("No maritime data")}</p>'
 
     rows = []
     items = vessels if isinstance(vessels, list) else [vessels]
@@ -417,7 +436,7 @@ def _render_maritime(data: dict) -> str:
 
     return f"""
     <table>
-        <tr><th>Vessel</th><th>Type</th><th>Flag</th></tr>
+        <tr><th>{t('Vessel')}</th><th>{t('Type')}</th><th>{t('Flag')}</th></tr>
         {"".join(rows)}
     </table>"""
 
@@ -426,14 +445,14 @@ def _render_situation_brief(data: dict) -> str:
     """Render situation brief / world brief."""
     brief = data.get("brief") or data.get("summary", "")
     if not brief:
-        return '<p class="no-data">Brief unavailable</p>'
+        return f'<p class="no-data">{t("Brief unavailable")}</p>'
     return f"<p>{_esc(str(brief)[:1000])}</p>"
 
 
 def _render_key_value(data: dict, keys: list[str] | None = None) -> str:
     """Generic key-value renderer for simple dicts."""
     if not data:
-        return '<p class="no-data">Data unavailable</p>'
+        return f'<p class="no-data">{t("Data unavailable")}</p>'
 
     items = []
     show_keys = keys or list(data.keys())[:20]
@@ -446,7 +465,7 @@ def _render_key_value(data: dict, keys: list[str] | None = None) -> str:
             "fetched_at",
         ):
             items.append(f"<li><strong>{_esc(k)}</strong>: {_esc(str(v)[:200])}</li>")
-    return f"<ul>{''.join(items)}</ul>" if items else '<p class="no-data">No data</p>'
+    return f"<ul>{''.join(items)}</ul>" if items else f'<p class="no-data">{t("No data")}</p>'
 
 
 # ---------------------------------------------------------------------------
@@ -520,7 +539,7 @@ async def _safe_fetch(name: str, fn) -> dict:
 def _build_html(data: dict[str, Any], title: str | None = None) -> str:
     """Assemble the full HTML document from collected data."""
     now = datetime.now(timezone.utc)
-    report_title = title or "World Intelligence Report"
+    report_title = title or t("World Intelligence Report")
     timestamp = now.strftime("%Y-%m-%d %H:%M UTC")
 
     sections_html = []
@@ -528,112 +547,123 @@ def _build_html(data: dict[str, Any], title: str | None = None) -> str:
     # Executive summary (world brief)
     if "world_brief" in data:
         sections_html.append(
-            f"<h2>Executive Summary</h2>{_render_situation_brief(data['world_brief'])}"
+            f"<h2>{t('Executive Summary')}</h2>{_render_situation_brief(data['world_brief'])}"
         )
 
     # Strategic posture
     if "strategic_posture" in data:
         sections_html.append(
-            f"<h2>Strategic Posture</h2>{_render_posture(data['strategic_posture'])}"
+            f"<h2>{t('Strategic Posture')}</h2>{_render_posture(data['strategic_posture'])}"
         )
 
     # Alerts
     if "alerts" in data:
-        sections_html.append(f"<h2>Active Alerts</h2>{_render_alerts(data['alerts'])}")
+        sections_html.append(f"<h2>{t('Active Alerts')}</h2>{_render_alerts(data['alerts'])}")
 
     # Markets
     if "markets" in data:
         sections_html.append(
-            f"<h2>Financial Markets</h2>{_render_markets(data['markets'])}"
+            f"<h2>{t('Financial Markets')}</h2>{_render_markets(data['markets'])}"
         )
 
     # Economic
     if "economic" in data:
         sections_html.append(
-            f"<h2>Economic Indicators</h2>{_render_key_value(data['economic'])}"
+            f"<h2>{t('Economic Indicators')}</h2>{_render_key_value(data['economic'])}"
         )
 
     # Conflicts
     if "conflicts" in data:
         sections_html.append(
-            f"<h2>Conflict & Security</h2>{_render_conflicts(data['conflicts'])}"
+            f"<h2>{t('Conflict & Security')}</h2>{_render_conflicts(data['conflicts'])}"
         )
 
     # Military
     if "military" in data:
         sections_html.append(
-            f"<h2>Military Activity</h2>{_render_key_value(data['military'])}"
+            f"<h2>{t('Military Activity')}</h2>{_render_key_value(data['military'])}"
         )
 
     # Earthquakes
     if "earthquakes" in data:
         sections_html.append(
-            f"<h2>Seismology</h2>{_render_earthquakes(data['earthquakes'])}"
+            f"<h2>{t('Seismology')}</h2>{_render_earthquakes(data['earthquakes'])}"
         )
 
     # Infrastructure
     if "infrastructure" in data:
         sections_html.append(
-            f"<h2>Infrastructure</h2>{_render_infrastructure(data['infrastructure'])}"
+            f"<h2>{t('Infrastructure')}</h2>{_render_infrastructure(data['infrastructure'])}"
         )
 
     # Cyber
     if "cyber" in data:
-        sections_html.append(f"<h2>Cyber Threats</h2>{_render_cyber(data['cyber'])}")
+        sections_html.append(f"<h2>{t('Cyber Threats')}</h2>{_render_cyber(data['cyber'])}")
 
     # Maritime
     if "maritime" in data:
-        sections_html.append(f"<h2>Maritime</h2>{_render_maritime(data['maritime'])}")
+        sections_html.append(f"<h2>{t('Maritime')}</h2>{_render_maritime(data['maritime'])}")
 
     # Health
     if "health" in data:
         sections_html.append(
-            f"<h2>Health & Disease</h2>{_render_health(data['health'])}"
+            f"<h2>{t('Health & Disease')}</h2>{_render_health(data['health'])}"
         )
 
     # Nuclear
     if "nuclear" in data:
         sections_html.append(
-            f"<h2>Nuclear Monitoring</h2>{_render_key_value(data['nuclear'])}"
+            f"<h2>{t('Nuclear Monitoring')}</h2>{_render_key_value(data['nuclear'])}"
         )
 
     # Climate
     if "climate" in data:
         sections_html.append(
-            f"<h2>Climate & Environment</h2>{_render_key_value(data['climate'])}"
+            f"<h2>{t('Climate & Environment')}</h2>{_render_key_value(data['climate'])}"
         )
 
     # News
     if "news" in data:
         sections_html.append(
-            f"<h2>News Clusters</h2>{_render_news_clusters(data['news'])}"
+            f"<h2>{t('News Clusters')}</h2>{_render_news_clusters(data['news'])}"
         )
 
     # Shipping
     if "shipping" in data:
-        sections_html.append(f"<h2>Shipping</h2>{_render_key_value(data['shipping'])}")
+        sections_html.append(f"<h2>{t('Shipping')}</h2>{_render_key_value(data['shipping'])}")
 
     # Service status
     if "service_status" in data:
         sections_html.append(
-            f"<h2>Cloud & Service Status</h2>{_render_key_value(data['service_status'])}"
+            f"<h2>{t('Cloud & Service Status')}</h2>{_render_key_value(data['service_status'])}"
         )
 
     body = "\n".join(sections_html)
-
+    html_lang = "zh-Hant-TW" if get_locale() == "zh-TW" else "en"
+    subtitle = t(
+        "Generated {timestamp} &mdash; World Intel MCP &mdash; 109 intelligence sources",
+        timestamp=timestamp,
+    )
+    footer_name = t(
+        "World Intelligence MCP Server &mdash; github.com/marc-shade/world-intel-mcp"
+    )
+    footer_note = t(
+        "Report generated {timestamp}. Data sourced from public APIs.",
+        timestamp=timestamp,
+    )
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{html_lang}">
 <head>
     <meta charset="utf-8">
-    <style>{_CSS}</style>
+    <style>{_localized_css()}</style>
 </head>
 <body>
     <h1>{_esc(report_title)}</h1>
-    <div class="subtitle">Generated {timestamp} &mdash; World Intel MCP &mdash; 109 intelligence sources</div>
+    <div class="subtitle">{subtitle}</div>
     {body}
     <div class="footer">
-        World Intelligence MCP Server &mdash; github.com/marc-shade/world-intel-mcp<br>
-        Report generated {timestamp}. Data sourced from public APIs.
+        {footer_name}<br>
+        {footer_note}
     </div>
 </body>
 </html>"""
@@ -695,8 +725,10 @@ async def generate_report(
     if fmt == "pdf":
         if not pdf_dependencies_available():
             return {
-                "error": 'WeasyPrint not installed. Install with `pip install -e ".[pdf]"`.',
-                "fallback": "Use fmt='html' for HTML output without WeasyPrint.",
+                "error": t(
+                    'WeasyPrint not installed. Install with `pip install -e ".[pdf]"`.'
+                ),
+                "fallback": t("Use fmt='html' for HTML output without WeasyPrint."),
             }
         # Import inside the function to avoid import-time failures
         from weasyprint import HTML as WeasyHTML
