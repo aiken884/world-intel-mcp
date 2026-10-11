@@ -41,7 +41,14 @@ def _tiny_app() -> Starlette:
 
 
 def _port_free(port: int) -> bool:
+    """True when a server could bind the port right now.
+
+    SO_REUSEADDR mirrors what a restarting server does: connections left in
+    TIME_WAIT by the requests just served must not count as "still in use",
+    only a live listener does.
+    """
     with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind(("127.0.0.1", port))
         except OSError:
