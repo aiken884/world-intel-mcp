@@ -109,9 +109,11 @@ def run_smoke(app: str, label: str, extra_env: dict | None = None, expect_mode: 
     home = tmpdir("wi-home-")
     out = os.path.join(tmpdir("wi-out-"), "smoke.json")
     env = clean_env(home, {"WORLD_INTEL_GUI_SMOKE_OUT": out, **(extra_env or {})})
-    proc = subprocess.Popen(
-        [exe_of(app)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=home
-    )
+    # Output goes to a file, not a pipe: nothing reads a pipe while wait() blocks, so a
+    # chatty app would stall on a full pipe buffer and be misreported as a hang.
+    out_log = os.path.join(tmpdir("wi-log-"), "output.txt")
+    with open(out_log, "wb") as log_fh:
+        proc = subprocess.Popen([exe_of(app)], env=env, stdout=log_fh, stderr=subprocess.STDOUT, cwd=home)
     CHILDREN.append(proc)
     try:
         rc = proc.wait(SMOKE_TIMEOUT)
@@ -120,7 +122,7 @@ def run_smoke(app: str, label: str, extra_env: dict | None = None, expect_mode: 
         check(False, f"{label}: finished within {SMOKE_TIMEOUT}s")
         print("---- app log tail ----\n" + log_tail(home) + "\n----", flush=True)
         return None
-    output = proc.stdout.read() if proc.stdout else ""
+    output = Path(out_log).read_text(encoding="utf-8", errors="replace")
     if not check(os.path.exists(out), f"{label}: wrote the smoke result file"):
         print("---- app output ----\n" + output[-2000:] + "\n---- app log tail ----\n" + log_tail(home), flush=True)
         check(rc == 0, f"{label}: process exit code 0 (got {rc})")

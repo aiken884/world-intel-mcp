@@ -181,11 +181,14 @@ Claude Code 設定範例（路徑請換成實際的絕對路徑）：
 }
 ```
 
-驗收可執行：
+驗收可執行：先由原始碼的工具註冊表產生工具名稱清單，再讓驗收腳本比對執行檔實際對外的 MCP 工具名稱集合（內容比對，不只看結束碼）：
 
 ```bash
-python3 -I scripts/verify-macos-build.py --exe dist/world-intel/world-intel --expected-tools <工具名稱 JSON>
+.venv/bin/python -c "import json;from world_intel_mcp.tools import ALL_TOOLS;print(json.dumps(sorted(x.name for x in ALL_TOOLS)))" > /tmp/expected-tools.json
+python3 -I scripts/verify-macos-build.py --exe dist/world-intel/world-intel --expected-tools /tmp/expected-tools.json
 ```
+
+`--expected-tools` 是必填參數，內容就是上面這份 JSON 陣列。腳本會在暫存目錄（獨立 HOME 與工作目錄）中檢查 `--help` 語系、MCP `tools/list` 與儀表板首頁；任何一項失敗時，會附上子程序 stderr 的最後約 40 行。
 
 限制：
 

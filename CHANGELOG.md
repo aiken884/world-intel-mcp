@@ -21,6 +21,28 @@
   `scripts/verify-macos-app.py`. `scripts/build-macos.sh` now only replaces
   `dist/world-intel/` instead of wiping all of `dist/`.
 
+### Changed
+- `WORLD_INTEL_LANG` resolution now follows the usual `LANG` conventions, and
+  `world-intel --lang` reports an unsupported value with a clear error
+  message.
+- AOI briefs and digests, and Click's built-in plural messages, are now
+  translated to zh-TW.
+- `scripts/verify-macos-build.py --expected-tools` documents how to generate
+  the tool-name list; the README's macOS acceptance section shows the
+  one-line command.
+
+### Fixed
+- Dashboard HUD stat pills for quakes, nuclear, exposure, traffic and
+  webcams now zoom the map on click; those layers were `L.layerGroup()`
+  (no `getBounds()`) and the failure was swallowed silently. They are now
+  `L.featureGroup()`.
+- Acceptance-script hygiene: `verify-macos-build.py` sends child stderr to
+  files and prints the tail on failure, fails fast when the dashboard
+  process exits early, keeps HOME and cwd in one temp directory removed
+  only after the children are waited on, and no longer waits out the full
+  MCP timeout when the process has already exited; `verify-macos-app.py`
+  no longer risks stalling on an unread output pipe.
+
 ## 0.10.0 - 2026-09-02
 
 Geofences become visible and their news becomes geographic: the
