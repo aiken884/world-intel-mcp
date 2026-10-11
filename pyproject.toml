@@ -36,6 +36,7 @@ world-intel-mcp = "world_intel_mcp.server:run"
 intel = "world_intel_mcp.cli:main"
 intel-dashboard = "world_intel_mcp.dashboard.app:run"
 intel-collector = "world_intel_mcp.collector:main"
+world-intel = "world_intel_mcp.launcher:main"
 
 [build-system]
 requires = ["hatchling"]

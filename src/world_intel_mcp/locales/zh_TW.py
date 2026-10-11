@@ -425,6 +425,20 @@ CLI: dict[str, str] = {
     'New': '新增',
     'Departed': '離開',
     'Unchanged': '未變',
+    'Unknown command: {name}': '未知的指令：{name}',
+    (
+        'Usage: world-intel [--lang zh-TW|en] <mcp|cli|dashboard|collector> [args...]\n'
+        '  mcp        MCP stdio server (for Claude Code / Cursor)\n'
+        '  cli        Command-line tool (same as `intel`)\n'
+        '  dashboard  Live web dashboard (default http://127.0.0.1:8501)\n'
+        '  collector  Background data collector'
+    ): (
+        '用法：world-intel [--lang zh-TW|en] <mcp|cli|dashboard|collector> [參數...]\n'
+        '  mcp        MCP stdio 伺服器（供 Claude Code / Cursor 使用）\n'
+        '  cli        指令列工具（等同 `intel`）\n'
+        '  dashboard  即時網頁儀表板（預設 http://127.0.0.1:8501）\n'
+        '  collector  背景資料收集器'
+    ),
 }
 
 # reports.py, daily digest, situation brief.
