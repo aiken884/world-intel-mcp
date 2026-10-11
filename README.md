@@ -110,6 +110,14 @@ intel-dashboard              # http://localhost:8501
 intel-dashboard --port 9000  # custom port
 ```
 
+#### 底圖與授權（Basemap & licensing）
+
+儀表板底圖使用 OpenStreetMap 標準圖磚（`tile.openstreetmap.org`），免金鑰，地圖右下角固定顯示「© OpenStreetMap contributors」出處標示。使用上受 [OSM 圖磚使用政策](https://operations.osmfoundation.org/policies/tiles/) 約束：僅限個人／小量使用、必須保留出處標示、請勿大量預抓圖磚。
+
+- 斷網或圖磚載入失敗時，地圖仍會顯示標記與資料，只是沒有底圖。
+- OSM 是淺色圖，儀表板以 CSS 濾鏡（只作用在圖磚層）轉為深色，不影響標記與叢集。
+- 要換其他圖磚來源，只需修改 `src/world_intel_mcp/dashboard/index.html` 中 `initMap()` 內的 `L.tileLayer(...)` 一處（連同 `attribution` 文字）。
+
 ### PDF/HTML Reports
 
 ```bash
@@ -129,6 +137,105 @@ intel markets              # stock indices
 intel earthquakes --min-mag 5.0
 intel status               # cache + circuit breaker health
 ```
+
+---
+
+## 語系（Language）
+
+預設語系為台灣繁體中文（`zh-TW`）。要切回英文，可設定環境變數或在指令加旗標：
+
+```bash
+export WORLD_INTEL_LANG=en           # 環境變數
+world-intel --lang en cli markets    # 單次指定；--lang 只能放在子指令之前
+```
+
+- 支援 `en*`、`zh*`，其他一律 zh-TW。只看第一段語言碼，並容忍 POSIX 寫法（例如 `en_US.UTF-8`、`en-AU`、`zh_TW.UTF-8`）；`zh-CN`、`zh-HK` 等沒有對應語系，視同 `zh-TW`；無法辨識的值（如 `fr`、`eng`）或空值回退為 `zh-TW`。
+- 翻譯範圍：`intel` CLI（指令說明、表格欄名、訊息）、網頁儀表板，以及報告、每日摘要、情勢簡報的固定文字。情勢簡報使用 Ollama 時，zh-TW 會要求模型以台灣繁體中文輸出。
+- 不翻譯：外部 API 回傳的資料（例如新聞標題）、MCP 工具名稱／說明／參數、JSON 輸出的鍵名、stderr 的 logger 訊息，以及儀表板與 collector 的 argparse 說明。
+
+## macOS 執行檔
+
+可把 MCP 伺服器、CLI、儀表板與 collector 打包成單一 macOS 執行檔（PyInstaller onedir），不需要在目標機器上維護 Python 環境。
+
+```bash
+scripts/build-macos.sh   # 需要 uv；在 .venv-build/ 以 Python 3.12 建置
+```
+
+產物為 `dist/world-intel/world-intel`（約 34 MB，Mach-O arm64）。單一入口 `world-intel` 的子指令：
+
+- `mcp`：stdio MCP 伺服器
+- `cli …`：同 `intel`
+- `dashboard`：網頁儀表板
+- `collector`：collector daemon
+
+Claude Code 設定範例（路徑請換成實際的絕對路徑）：
+
+```json
+{
+  "mcpServers": {
+    "world-intel-mcp": {
+      "command": "/絕對路徑/dist/world-intel/world-intel",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+驗收可執行：先由原始碼的工具註冊表產生工具名稱清單，再讓驗收腳本比對執行檔實際對外的 MCP 工具名稱集合（內容比對，不只看結束碼）：
+
+```bash
+.venv/bin/python -c "import json;from world_intel_mcp.tools import ALL_TOOLS;print(json.dumps(sorted(x.name for x in ALL_TOOLS)))" > /tmp/expected-tools.json
+python3 -I scripts/verify-macos-build.py --exe dist/world-intel/world-intel --expected-tools /tmp/expected-tools.json
+```
+
+`--expected-tools` 是必填參數，內容就是上面這份 JSON 陣列。腳本會在暫存目錄（獨立 HOME 與工作目錄）中檢查 `--help` 語系、MCP `tools/list` 與儀表板首頁；任何一項失敗時，會附上子程序 stderr 的最後約 40 行。
+
+限制：
+
+- 只對應建置機架構（Apple Silicon arm64）。
+- 未簽署、未公證。本機自建自用不受 Gatekeeper 影響；若要傳給他人，需另行簽署。
+- 不含 `[vector]`（fastembed／Qdrant）與 `[pdf]`（WeasyPrint）功能；`intel report --format html` 仍可用。
+- 金鑰檔位置：凍結版的儀表板（`dashboard`）與 collector（`collector`）都只讀取執行檔旁的 `dist/world-intel/.env`（已用建置產物實測），不會讀取專案根目錄的 `.env`，也不會讀取 `dist/.env` 或 `dist/world-intel/_internal/.env`。金鑰請放在該處，或以環境變數提供。
+- 重建（`scripts/build-macos.sh`）只會替換 `dist/world-intel/`（不動同在 `dist/` 下的 App 與 DMG），並會先備份、建置成功後還原 `dist/world-intel/.env`（權限保持不變），金鑰不會因重建而消失。
+
+## macOS App（DMG）
+
+給不想開終端機的使用者：雙擊 `World Intel.app`，就會開出一個原生視窗直接顯示儀表板（預設繁體中文），關閉視窗即結束程式。內部是 PyInstaller 打包的 Python 加上 pywebview（macOS 內建的 WKWebView），儀表板伺服器只監聽本機 `127.0.0.1`。
+
+**建置**（需要 uv；Apple Silicon）：
+
+```bash
+scripts/build-macos-app.sh   # → dist/World Intel.app（約 50 MB，ad-hoc 簽署），用 .venv-app/ 建置
+scripts/make-dmg.sh          # → dist/World-Intel-<版本>-arm64.dmg（約 29 MB，含 App 與 Applications 捷徑）
+python3 -I scripts/verify-macos-app.py --app "dist/World Intel.app" --dmg dist/World-Intel-*-arm64.dmg
+```
+
+版本號取自 `pyproject.toml`。驗收腳本會實際啟動 App（乾淨環境、暫存 HOME），檢查頁面語系、翻譯字典與「圖層」標籤確實渲染、埠佔用時仍可啟動、單一實例、DMG 內容與從 DMG 複製出的 App，全部通過才回傳 0。
+
+**安裝**：開啟 DMG，把 `World Intel` 拖曳到 `Applications` 捷徑，再從「應用程式」開啟。
+
+**第一次開啟**：本機自己建置的 App 通常可直接開。從網路或他機取得的副本沒有公證，會被 Gatekeeper 擋下；請對 App 按右鍵 →「打開」，或執行下列指令移除隔離屬性（僅限你信任的來源）：
+
+```bash
+xattr -cr "/Applications/World Intel.app"
+```
+
+**設定與記錄**：
+
+- API 金鑰：放在 `~/Library/Application Support/World Intel/.env`（格式同專案的 `.env`；目錄需自行建立，已存在於環境變數中的值不會被覆蓋）。
+- 記錄檔：`~/Library/Logs/World Intel/world-intel.log`（1 MB × 3 份輪替）。
+- 單一實例：重複開啟時，第二次只會用瀏覽器打開已在執行的那個實例然後結束。
+
+**與 CLI 版（`dist/world-intel`）的差異**：App 只提供儀表板視窗，沒有 `mcp`／`cli`／`collector` 子指令，也不接受命令列參數；兩者可並存於 `dist/`。App 的金鑰檔位置與 CLI 版不同（見上）。若瀏覽器介面較合適，也可繼續用 CLI 版的 `dashboard` 子指令。
+
+**已知限制**：
+
+- 只對應建置機架構（Apple Silicon arm64）。
+- 未簽署（僅 ad-hoc）、未公證；本機自用不受影響，轉給他人須參考上方「第一次開啟」。
+- 不含 `[vector]`（fastembed／Qdrant）與 `[pdf]`（WeasyPrint）功能；儀表板的 PDF 報告端點因此不可用。
+- 儀表板優先使用固定的本機埠 18501（讓視窗內的版面設定能跨次保留），被佔用時改用任一空埠；不使用 8501，不會與 CLI 版儀表板衝突。
+- 圖示為占位圖（儀表板截圖的置中裁切，由 `packaging/make-icon.sh` 產生）。
+- 若 pywebview 無法啟動，會退回用預設瀏覽器開啟儀表板並留在前景，原因寫在記錄檔。
 
 ---
 

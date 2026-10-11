@@ -66,8 +66,19 @@ a { color: var(--accent); text-decoration: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ═══════════════ MAP ═══════════════ */
-#map { position: fixed; inset: 0; z-index: 1; }
+#map { position: fixed; inset: 0; z-index: 1; background: #0b0f1a; }
 .leaflet-container { background: var(--bg) !important; }
+/* Basemap is OpenStreetMap (light): darken the tile pane only, so markers,
+   clusters and lines (other panes) keep their own colours. */
+.leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(0.9) saturate(0.5);
+}
+.leaflet-control-attribution {
+    margin-bottom: 40px !important; /* clear bottom ticker (34px) */
+    background: rgba(7,11,20,0.78) !important; color: var(--text) !important;
+    font-size: 0.62rem;
+}
+.leaflet-control-attribution a { color: var(--accent) !important; }
 .leaflet-control-zoom {
     margin-bottom: 50px !important; /* clear bottom ticker */
 }
@@ -751,22 +762,22 @@ a { color: var(--accent); text-decoration: none; }
     <div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:6px">
         <div style="font-size:0.55rem;letter-spacing:1px;color:rgba(255,255,255,0.35);margin-bottom:4px">REGION</div>
         <div id="regionPresets" style="display:flex;flex-wrap:wrap;gap:2px">
-            <button class="rgn-btn active" data-region="global">Globe</button>
-            <button class="rgn-btn" data-region="americas">Americas</button>
-            <button class="rgn-btn" data-region="europe">Europe</button>
-            <button class="rgn-btn" data-region="mena">MENA</button>
-            <button class="rgn-btn" data-region="asia">Asia-Pac</button>
-            <button class="rgn-btn" data-region="africa">Africa</button>
+            <button class="rgn-btn active" data-region="global" aria-pressed="true">Globe</button>
+            <button class="rgn-btn" data-region="americas" aria-pressed="false">Americas</button>
+            <button class="rgn-btn" data-region="europe" aria-pressed="false">Europe</button>
+            <button class="rgn-btn" data-region="mena" aria-pressed="false">MENA</button>
+            <button class="rgn-btn" data-region="asia" aria-pressed="false">Asia-Pac</button>
+            <button class="rgn-btn" data-region="africa" aria-pressed="false">Africa</button>
         </div>
     </div>
     <div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:6px">
-        <div style="font-size:0.55rem;letter-spacing:1px;color:rgba(255,255,255,0.35);margin-bottom:4px">TIME WINDOW</div>
-        <div id="timeFilter" style="display:flex;gap:2px">
-            <button class="rgn-btn" data-hours="1">1h</button>
-            <button class="rgn-btn" data-hours="6">6h</button>
-            <button class="rgn-btn active" data-hours="24">24h</button>
-            <button class="rgn-btn" data-hours="168">7d</button>
-            <button class="rgn-btn" data-hours="0">All</button>
+        <div style="font-size:0.55rem;letter-spacing:1px;color:rgba(255,255,255,0.35);margin-bottom:4px" title="Applies to: Earthquakes, News, Conflict events">TIME WINDOW</div>
+        <div id="timeFilter" style="display:flex;gap:2px" title="Applies to: Earthquakes, News, Conflict events">
+            <button class="rgn-btn" data-hours="1" aria-pressed="false">1h</button>
+            <button class="rgn-btn" data-hours="6" aria-pressed="false">6h</button>
+            <button class="rgn-btn active" data-hours="24" aria-pressed="true">24h</button>
+            <button class="rgn-btn" data-hours="168" aria-pressed="false">7d</button>
+            <button class="rgn-btn" data-hours="0" aria-pressed="false">All</button>
         </div>
     </div>
 </aside>
@@ -829,7 +840,238 @@ function cls(n) { return n == null ? '' : n >= 0 ? 'up' : 'down'; }
 function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 function trunc(s, n) { n = n || 50; s = s || ''; return s.length > n ? s.slice(0, n) + '\u2026' : s; }
 function ago(ts) { if (!ts) return '\u2014'; var s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000); if (s < 60) return s + 's'; if (s < 3600) return Math.floor(s/60) + 'm'; if (s < 86400) return Math.floor(s/3600) + 'h'; return Math.floor(s/86400) + 'd'; }
-function _withinTimeWindow(ts) { if (!ts) return true; var age = Date.now() - new Date(ts).getTime(); return age < 7 * 86400000; }
+
+// ════════════ REGION & TIME FILTERS ════════════
+// The REGION and TIME WINDOW buttons in the layer panel.  Buttons are matched
+// by their data-region / data-hours attribute, never by their label: the
+// zh-TW translator rewrites the visible text.
+var REGION_BOUNDS = {
+    americas: [[-56, -170], [72, -30]],
+    europe:   [[34, -25], [72, 45]],
+    mena:     [[12, -18], [42, 63]],
+    asia:     [[-10, 60], [50, 180]],
+    africa:   [[-35, -20], [38, 52]]
+};
+var REGION_GLOBAL_VIEW = { center: [20, 0], zoom: 2.5 };
+var REGION_PREF_KEY = 'phoenix-region';
+var HOURS_PREF_KEY = 'phoenix-hours';
+var VALID_HOURS = [1, 6, 24, 168, 0];   // 0 = no limit
+var DEFAULT_REGION = 'global';
+var DEFAULT_HOURS = 24;
+
+function _readPref(key) {
+    try { return localStorage.getItem(key); } catch(e) { return null; }
+}
+function _writePref(key, value) {
+    try { localStorage.setItem(key, String(value)); } catch(e) {}
+}
+function _savedRegion() {
+    var v = _readPref(REGION_PREF_KEY);
+    return (v === DEFAULT_REGION || (v && REGION_BOUNDS.hasOwnProperty(v))) ? v : DEFAULT_REGION;
+}
+function _savedHours() {
+    var v = _readPref(HOURS_PREF_KEY);
+    var n = v == null ? NaN : parseInt(v, 10);
+    return (String(n) === v && VALID_HOURS.indexOf(n) >= 0) ? n : DEFAULT_HOURS;
+}
+
+var _timeWindowHours = _savedHours();
+
+// Timestamp -> epoch ms.  Date-only values (ACLED event_date, UCDP date_start
+// at midnight) only know the day, so they count as the END of that UTC day;
+// reading them as 00:00 would drop today's events from every short window.
+function _tsMs(ts) {
+    if (typeof ts !== 'string') return new Date(ts).getTime();
+    var s = ts.trim();
+    if (/^\d{4}-\d{2}-\d{2}(?:[T ]00:00:00(?:\.0+)?)?$/.test(s)) {
+        return Date.parse(s.slice(0, 10) + 'T00:00:00Z') + 86399999;
+    }
+    return new Date(s).getTime();
+}
+// Missing or unreadable timestamps stay in range: a window must never
+// silently drop data it cannot judge.
+function _withinTimeWindow(ts) {
+    if (!ts || !_timeWindowHours) return true;
+    var ms = _tsMs(ts);
+    if (isNaN(ms)) return true;
+    return Date.now() - ms < _timeWindowHours * 3600000;
+}
+
+// Which conflict feed the layer / HUD / search read (ACLED, then UCDP, then
+// the static hotspot fallback).
+function _conflictSource(data) {
+    if (!data) return null;
+    if (data.acled_events && !data.acled_events.error && data.acled_events.count > 0) return data.acled_events;
+    if (data.ucdp_events && !data.ucdp_events.error && data.ucdp_events.count > 0) return data.ucdp_events;
+    return data.conflict_zones;
+}
+function _windowQuakes(eq) {
+    return ((eq && eq.earthquakes) || []).filter(function(q) { return _withinTimeWindow(q.time || q.timestamp); });
+}
+function _windowConflictEvents(src) {
+    return ((src && src.events) || []).filter(function(e) { return _withinTimeWindow(e.event_date || e.date_start); });
+}
+// The feed's own total survives only while the window dropped nothing.
+function _windowConflictCount(src) {
+    var all = (src && src.events) || [];
+    var kept = _windowConflictEvents(src);
+    return kept.length === all.length ? (src.count || kept.length) : kept.length;
+}
+function _windowArticles(arts) {
+    return (arts || []).filter(function(a) { return _withinTimeWindow(a.published || a.pub_date || a.timestamp); });
+}
+
+function _syncButtonGroup(selector, attr, value) {
+    $$(selector).forEach(function(b) {
+        var on = b.getAttribute(attr) === String(value);
+        if (on) b.classList.add('active'); else b.classList.remove('active');
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+}
+
+// Leave room for the floating panels so the region is not drawn under them.
+function _mapInsets() {
+    var tl = [20, 20], br = [20, 20];
+    try {
+        var W = window.innerWidth, H = window.innerHeight;
+        var layers = document.getElementById('layers');
+        var bar = document.getElementById('topBar');
+        var tick = document.getElementById('ticker');
+        var drw = document.getElementById('drawer');
+        if (layers) tl[0] = Math.max(tl[0], Math.round(layers.getBoundingClientRect().right) + 12);
+        if (bar) tl[1] = Math.max(tl[1], Math.round(bar.getBoundingClientRect().bottom) + 12);
+        if (tick) br[1] = Math.max(br[1], Math.round(H - tick.getBoundingClientRect().top) + 12);
+        if (drw && !drw.classList.contains('closed')) {
+            br[0] = Math.max(br[0], Math.round(W - drw.getBoundingClientRect().left) + 12);
+        }
+        // A tiny window must not end up with all of its area as padding.
+        if (tl[0] + br[0] > W * 0.6 || tl[1] + br[1] > H * 0.6) { tl = [20, 20]; br = [20, 20]; }
+    } catch(e) { tl = [20, 20]; br = [20, 20]; }
+    return { tl: tl, br: br };
+}
+
+function _setRegion(key, opts) {
+    opts = opts || {};
+    if (key !== DEFAULT_REGION && !REGION_BOUNDS.hasOwnProperty(key)) return false;
+    _syncButtonGroup('#regionPresets .rgn-btn', 'data-region', key);
+    if (opts.persist !== false) _writePref(REGION_PREF_KEY, key);
+    if (!map) return true;
+    var animate = opts.animate !== false;
+    if (key === DEFAULT_REGION) {
+        map.setView(REGION_GLOBAL_VIEW.center, REGION_GLOBAL_VIEW.zoom, { animate: animate });
+    } else {
+        var pad = _mapInsets();
+        map.fitBounds(REGION_BOUNDS[key], { paddingTopLeft: pad.tl, paddingBottomRight: pad.br, animate: animate });
+    }
+    return true;
+}
+
+// Re-render the views that read the window from data already in memory.  No
+// refetch and no updateAll(): that would re-add every static layer too.
+function _redrawTimeWindowViews() {
+    var d = latestData;
+    if (!d) return;
+    [
+        ['quakes', function() { updateMapQuakes(d.earthquakes); }],
+        ['conflict', function() { updateMapConflict(_conflictSource(d)); }],
+        ['news', function() { updateMapNews(d.news_feed); }],
+        ['hud', function() { updateHudStats(d); }],
+        ['ticker', function() { updateTicker(d); }]
+    ].forEach(function(p) {
+        try { p[1](); } catch(e) { console.warn('time window redraw: ' + p[0] + ' failed:', e); }
+    });
+    if (typeof _syncLayersTop === 'function') setTimeout(_syncLayersTop, 50);
+}
+
+function _setTimeWindow(hours, opts) {
+    opts = opts || {};
+    if (VALID_HOURS.indexOf(hours) < 0) return false;
+    _timeWindowHours = hours;
+    _syncButtonGroup('#timeFilter .rgn-btn', 'data-hours', hours);
+    if (opts.persist !== false) _writePref(HOURS_PREF_KEY, hours);
+    _redrawTimeWindowViews();
+    return true;
+}
+
+// Called once, right after initMap().
+function _initFilters() {
+    $$('#regionPresets .rgn-btn').forEach(function(b) {
+        b.addEventListener('click', function() { _setRegion(b.getAttribute('data-region')); });
+    });
+    $$('#timeFilter .rgn-btn').forEach(function(b) {
+        b.addEventListener('click', function() { _setTimeWindow(parseInt(b.getAttribute('data-hours'), 10)); });
+    });
+    var region = _savedRegion();
+    _syncButtonGroup('#timeFilter .rgn-btn', 'data-hours', _timeWindowHours);
+    _syncButtonGroup('#regionPresets .rgn-btn', 'data-region', region);
+    // The map already starts on the globe; only a saved region needs a move.
+    if (region !== DEFAULT_REGION) _setRegion(region, { animate: false, persist: false });
+}
+// ════════════ END REGION & TIME FILTERS ════════════
+
+// ════════════ I18N ════════════
+// window.__I18N__ is injected by the server (empty for English). _t() is for
+// strings built from data; the DOM translator below replaces whole text
+// nodes / attributes that exactly match a catalog entry, including nodes
+// inserted later by the panels and Leaflet popups.
+var I18N = window.__I18N__ || {};
+var _hasOwn = Object.prototype.hasOwnProperty;
+function _t(s, vars) {
+    var r = _hasOwn.call(I18N, s) ? I18N[s] : s;
+    if (vars) { r = r.replace(/\{(\w+)\}/g, function(m, k) { return vars[k] != null ? vars[k] : m; }); }
+    return r;
+}
+(function () {
+    if (!Object.keys(I18N).length) return;
+    var ATTRS = ['placeholder', 'title', 'aria-label'];
+    var SKIP = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1 };
+    var SKIP_CLASS = /\bleaflet-(tile|marker|shadow|overlay)-pane\b/;
+    // Write only when the value actually changes: even an identical write
+    // queues a mutation record, and identity entries (Kp, ID, ETF ...) would
+    // otherwise re-trigger this observer on every frame forever.
+    function text(node) {
+        var raw = node.nodeValue, s = raw.trim();
+        if (s && _hasOwn.call(I18N, s)) {
+            var next = raw.replace(s, function () { return I18N[s]; });
+            if (next !== raw) node.nodeValue = next;
+        }
+    }
+    function attrs(el) {
+        ATTRS.forEach(function (a) {
+            var v = el.getAttribute && el.getAttribute(a);
+            if (v && _hasOwn.call(I18N, v.trim())) {
+                var next = I18N[v.trim()];
+                if (next !== v) el.setAttribute(a, next);
+            }
+        });
+    }
+    function walk(n) {
+        if (n.nodeType === 3) { text(n); return; }
+        if (n.nodeType !== 1 || SKIP[n.tagName]) return;
+        if (n.className && typeof n.className === 'string' && SKIP_CLASS.test(n.className)) return;
+        attrs(n);
+        for (var c = n.firstChild; c; c = c.nextSibling) walk(c);
+    }
+    walk(document.documentElement);
+    // Batch per animation frame; Leaflet churns tile/marker panes constantly.
+    var queue = [], scheduled = false;
+    function flush() {
+        scheduled = false;
+        var items = queue; queue = [];
+        items.forEach(function (m) {
+            if (m.type === 'childList') { m.addedNodes.forEach(walk); }
+            else if (m.type === 'characterData') { text(m.target); }
+            else if (m.type === 'attributes') { attrs(m.target); }
+        });
+    }
+    new MutationObserver(function (muts) {
+        muts.forEach(function (m) { queue.push(m); });
+        if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
+    }).observe(document.documentElement, {
+        childList: true, subtree: true, characterData: true,
+        attributes: true, attributeFilter: ATTRS
+    });
+})();
 
 // ════════════ STATE ════════════
 var latestData = null;
@@ -903,9 +1145,14 @@ function _restoreCachedVector() {
 
 // ════════════ MAP INIT ════════════
 function initMap() {
-    map = L.map('map', { zoomControl: false, attributionControl: false, worldCopyJump: true }).setView([20, 0], 2.5);
+    map = L.map('map', { zoomControl: false, attributionControl: true, worldCopyJump: true }).setView([20, 0], 2.5);
     L.control.zoom({ position: 'bottomleft' }).addTo(map);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(map);
+    // OSM tile policy requires a visible credit; no Leaflet advertising prefix.
+    map.attributionControl.setPrefix(false);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
     var clusterOpts = function(cls, size) {
         return {
             maxClusterRadius: size || 40,
@@ -918,18 +1165,18 @@ function initMap() {
             }
         };
     };
-    mapLayers.quakes = L.layerGroup().addTo(map);
+    mapLayers.quakes = L.featureGroup().addTo(map);
     mapLayers.military = L.markerClusterGroup(clusterOpts('cluster-military', 50)).addTo(map);
     mapLayers.conflict = L.markerClusterGroup(clusterOpts('cluster-conflict', 45)).addTo(map);
     mapLayers.fires = L.markerClusterGroup(clusterOpts('cluster-fire', 45)).addTo(map);
     mapLayers.convergence = L.layerGroup().addTo(map);
-    mapLayers.nuclear = L.layerGroup().addTo(map);
+    mapLayers.nuclear = L.featureGroup().addTo(map);
     mapLayers.infra = L.layerGroup().addTo(map);
-    mapLayers.exposure = L.layerGroup().addTo(map);
+    mapLayers.exposure = L.featureGroup().addTo(map);
     mapLayers.airtraffic = L.markerClusterGroup(clusterOpts(null, 60)).addTo(map);
-    mapLayers.traffic = L.layerGroup().addTo(map);
+    mapLayers.traffic = L.featureGroup().addTo(map);
     mapLayers.navwarnings = L.markerClusterGroup(clusterOpts(null, 40)).addTo(map);
-    mapLayers.webcams = L.layerGroup().addTo(map);
+    mapLayers.webcams = L.featureGroup().addTo(map);
     mapLayers.climate = L.layerGroup().addTo(map);
     mapLayers.news = L.markerClusterGroup(clusterOpts(null, 35)).addTo(map);
     mapLayers.aoi = L.layerGroup().addTo(map);
@@ -967,8 +1214,8 @@ function showDetail(type, d) {
 
     if (type === 'earthquake') {
         var mag = d.magnitude || 0;
-        title = 'M' + (typeof mag === 'number' ? mag.toFixed(1) : mag) + ' \u2014 ' + (d.place || 'Unknown');
-        subtitle = ago(d.time) + ' ago';
+        title = 'M' + (typeof mag === 'number' ? mag.toFixed(1) : mag) + ' \u2014 ' + (d.place || _t('Unknown'));
+        subtitle = _t('{age} ago', {age: ago(d.time)});
         fields = [
             ['Magnitude', typeof mag === 'number' ? mag.toFixed(1) : mag, mag >= 6 ? 'crit' : mag >= 5 ? 'high' : ''],
             ['Location', d.place || '\u2014'],
@@ -977,11 +1224,11 @@ function showDetail(type, d) {
             ['Coordinates', d.latitude != null ? d.latitude.toFixed(3) + ', ' + d.longitude.toFixed(3) : '\u2014'],
             ['Tsunami Alert', d.tsunami_alert ? 'YES' : 'No', d.tsunami_alert ? 'crit' : 'ok'],
             ['Felt Reports', d.felt_reports || '\u2014'],
-            ['Alert Level', d.alert_level || 'None', d.alert_level === 'red' ? 'crit' : d.alert_level === 'orange' ? 'high' : '']
+            ['Alert Level', d.alert_level || _t('None'), d.alert_level === 'red' ? 'crit' : d.alert_level === 'orange' ? 'high' : '']
         ];
         if (d.url) link = d.url;
     } else if (type === 'military') {
-        title = d.callsign || d.icao24 || 'Unknown Aircraft';
+        title = d.callsign || d.icao24 || _t('Unknown Aircraft');
         subtitle = d.origin_country || '';
         fields = [
             ['Callsign', d.callsign || '\u2014'],
@@ -996,7 +1243,7 @@ function showDetail(type, d) {
         ];
     } else if (type === 'conflict') {
         var fat = d.fatalities || 0;
-        title = (d.event_type || d.type || 'Conflict Event');
+        title = (d.event_type || d.type || _t('Conflict Event'));
         subtitle = (d.country || '') + (d.event_date ? ' \u2014 ' + d.event_date : '');
         fields = [
             ['Event Type', d.event_type || d.type || '\u2014'],
@@ -1010,7 +1257,7 @@ function showDetail(type, d) {
             ['Notes', trunc(d.notes || '', 120)]
         ];
     } else if (type === 'fire') {
-        title = 'Fire Cluster \u2014 ' + d.fire_count + ' detections';
+        title = _t('Fire Cluster \u2014 {n} detections', {n: d.fire_count});
         subtitle = d.lat.toFixed(2) + ', ' + d.lon.toFixed(2);
         fields = [
             ['Fire Count', String(d.fire_count), d.fire_count > 50 ? 'crit' : d.fire_count > 10 ? 'high' : ''],
@@ -1020,8 +1267,8 @@ function showDetail(type, d) {
         ];
     } else if (type === 'convergence') {
         var score = d.convergence_score || 0;
-        title = d.name || 'Convergence Zone';
-        subtitle = 'Score: ' + score.toFixed(1);
+        title = d.name || _t('Convergence Zone');
+        subtitle = _t('Score: {score}', {score: score.toFixed(1)});
         fields = [
             ['Convergence Score', score.toFixed(1), score >= 7 ? 'crit' : score >= 4 ? 'high' : '']
         ];
@@ -1034,7 +1281,7 @@ function showDetail(type, d) {
         if (d.lat != null) fields.push(['Coordinates', d.lat.toFixed(3) + ', ' + d.lon.toFixed(3)]);
     } else if (type === 'nuclear') {
         var cs = d.concern_score || 0;
-        title = (d.site || 'Unknown Site') + ' \u2014 M' + (d.magnitude || 0).toFixed(1);
+        title = (d.site || _t('Unknown Site')) + ' \u2014 M' + (d.magnitude || 0).toFixed(1);
         subtitle = d.site_country || '';
         fields = [
             ['Concern Score', cs.toFixed(1), cs >= 70 ? 'crit' : cs >= 50 ? 'high' : cs >= 30 ? 'high' : ''],
@@ -1047,7 +1294,7 @@ function showDetail(type, d) {
             ['Coordinates', d.latitude != null ? d.latitude.toFixed(3) + ', ' + d.longitude.toFixed(3) : '\u2014']
         ];
     } else if (type === 'military_base') {
-        title = d.name || 'Base';
+        title = d.name || _t('Base');
         subtitle = d.operator + ' \u2014 ' + (d.country || '');
         fields = [
             ['Name', d.name || '\u2014'],
@@ -1059,7 +1306,7 @@ function showDetail(type, d) {
             ['Coordinates', d.latitude != null ? d.latitude.toFixed(3) + ', ' + d.longitude.toFixed(3) : '\u2014']
         ];
     } else if (type === 'port') {
-        title = d.name || 'Port';
+        title = d.name || _t('Port');
         subtitle = (d.type || '').replace(/_/g, ' ') + ' \u2014 ' + (d.country || '');
         fields = [
             ['Name', d.name || '\u2014'],
@@ -1070,7 +1317,7 @@ function showDetail(type, d) {
             ['Coordinates', d.latitude != null ? d.latitude.toFixed(3) + ', ' + d.longitude.toFixed(3) : '\u2014']
         ];
     } else if (type === 'nuclear_facility') {
-        title = d.name || 'Facility';
+        title = d.name || _t('Facility');
         subtitle = (d.type || '').replace(/_/g, ' ') + ' \u2014 ' + (d.country || '');
         var st = d.status || '';
         fields = [
@@ -1084,7 +1331,7 @@ function showDetail(type, d) {
             ['Coordinates', d.latitude != null ? d.latitude.toFixed(3) + ', ' + d.longitude.toFixed(3) : '\u2014']
         ];
     } else if (type === 'exposure') {
-        title = d.city || 'Exposed City';
+        title = d.city || _t('Exposed City');
         subtitle = (d.country || '') + ' \u2014 ' + (d.population || '');
         fields = [
             ['City', d.city || '\u2014'],
@@ -1095,7 +1342,7 @@ function showDetail(type, d) {
             ['Distance', d.distance_km != null ? d.distance_km + ' km' : '\u2014']
         ];
     } else if (type === 'airtraffic') {
-        title = d.callsign || 'Aircraft';
+        title = d.callsign || _t('Aircraft');
         subtitle = d.origin || '';
         fields = [
             ['Callsign', d.callsign || '\u2014'],
@@ -1105,7 +1352,7 @@ function showDetail(type, d) {
             ['Coordinates', d.lat != null ? d.lat + ', ' + d.lon : '\u2014']
         ];
     } else if (type === 'traffic_city') {
-        title = d.name || 'City';
+        title = d.name || _t('City');
         subtitle = d.country || '';
         var congPct2 = d.congestion_pct || 0;
         fields = [
@@ -1117,7 +1364,7 @@ function showDetail(type, d) {
             ['Coordinates', d.lat + ', ' + d.lon]
         ];
     } else if (type === 'webcam') {
-        title = d.title || 'Camera';
+        title = d.title || _t('Camera');
         subtitle = (d.city || '') + (d.country ? ', ' + d.country : '');
         fields = [
             ['City', d.city || '\u2014'],
@@ -1127,7 +1374,7 @@ function showDetail(type, d) {
         ];
         link = d.player_url || '';
     } else if (type === 'news') {
-        title = d.title || 'Article';
+        title = d.title || _t('Article');
         subtitle = (d.feed_name || '') + (d._geo_country ? ' \u2014 ' + d._geo_country : '');
         fields = [
             ['Title', d.title || '\u2014'],
@@ -1153,8 +1400,8 @@ function showDetail(type, d) {
         ];
     } else if (type === 'climate') {
         var ta = d.temp_anomaly_c || 0;
-        title = (d.name || d.zone || 'Climate Zone');
-        subtitle = (ta > 0 ? '+' : '') + ta.toFixed(1) + '\u00B0C anomaly';
+        title = (d.name || d.zone || _t('Climate Zone'));
+        subtitle = _t('{v}\u00B0C anomaly', {v: (ta > 0 ? '+' : '') + ta.toFixed(1)});
         fields = [
             ['Zone', d.name || d.zone || '\u2014'],
             ['Temp Anomaly', (ta > 0 ? '+' : '') + ta.toFixed(1) + '\u00B0C', Math.abs(ta) > 2 ? 'crit' : Math.abs(ta) > 1 ? 'high' : ''],
@@ -1173,7 +1420,7 @@ function showDetail(type, d) {
     var body = '';
     // Webcam: show preview image at top of detail panel
     if (type === 'webcam' && d.preview_url) {
-        body += '<img src="' + esc(d.preview_url) + '" style="width:100%;border-radius:6px;margin-bottom:10px;" alt="' + esc(d.title || 'Webcam') + '" onerror="this.style.display=\'none\'">';
+        body += '<img src="' + esc(d.preview_url) + '" style="width:100%;border-radius:6px;margin-bottom:10px;" alt="' + esc(d.title || _t('Webcam')) + '" onerror="this.style.display=\'none\'">';
     }
     body += fields.map(function(f) {
         return '<div class="df"><span class="df-l">' + esc(f[0]) + '</span><span class="df-v ' + (f[2] || '') + '">' + esc(String(f[1])) + '</span></div>';
@@ -1233,7 +1480,7 @@ function showDrawerDetail(id) {
     var c = COLORS[type] || 'var(--accent)';
 
     if (type === 'news') {
-        title = d.title || 'Article';
+        title = d.title || _t('Article');
         subtitle = d.feed_name || d.source || '';
         fields = [
             ['Source', d.feed_name || d.source || '\u2014'],
@@ -1244,7 +1491,7 @@ function showDrawerDetail(id) {
         if (d.summary || d.description) fields.push(['Summary', trunc(d.summary || d.description || '', 500)]);
         link = d.link || d.url || '';
     } else if (type === 'cyber') {
-        title = d.indicator || d.ioc || d.url || 'Threat';
+        title = d.indicator || d.ioc || d.url || _t('Threat');
         subtitle = d.threat_type || d.type || '';
         fields = [
             ['Indicator', d.indicator || d.ioc || d.url || '\u2014'],
@@ -1256,7 +1503,7 @@ function showDrawerDetail(id) {
         ];
         link = d.reference || d.reference_url || '';
     } else if (type === 'health') {
-        title = d.title || 'Health Alert';
+        title = d.title || _t('Health Alert');
         subtitle = d.organization || '';
         fields = [
             ['Organization', d.organization || '\u2014'],
@@ -1266,7 +1513,7 @@ function showDrawerDetail(id) {
         ];
         link = d.link || d.url || '';
     } else if (type === 'ai') {
-        title = d.title || 'AI Paper';
+        title = d.title || _t('AI Paper');
         subtitle = d.feed_name || '';
         fields = [
             ['Source', d.feed_name || '\u2014'],
@@ -1276,8 +1523,8 @@ function showDrawerDetail(id) {
         ];
         link = d.link || d.url || '';
     } else if (type === 'social') {
-        title = d.title || 'Post';
-        subtitle = 'r/' + (d.subreddit || '?') + '  \u2022  Score: ' + (d.score || 0);
+        title = d.title || _t('Post');
+        subtitle = 'r/' + (d.subreddit || '?') + '  \u2022  ' + _t('Score: {score}', {score: (d.score || 0)});
         fields = [
             ['Subreddit', 'r/' + (d.subreddit || '\u2014')],
             ['Score', String(d.score || 0)],
@@ -1289,8 +1536,8 @@ function showDrawerDetail(id) {
         link = d.url || d.permalink || '';
     } else if (type === 'prediction') {
         var prob = d.probability || d.yes_price;
-        title = d.question || d.title || 'Market';
-        subtitle = prob != null ? 'Probability: ' + (typeof prob === 'number' ? (prob * 100).toFixed(0) + '%' : String(prob)) : '';
+        title = d.question || d.title || _t('Market');
+        subtitle = prob != null ? _t('Probability: {p}', {p: (typeof prob === 'number' ? (prob * 100).toFixed(0) + '%' : String(prob))}) : '';
         fields = [
             ['Question', d.question || d.title || '\u2014'],
             ['Probability', prob != null ? (typeof prob === 'number' ? (prob * 100).toFixed(1) + '%' : String(prob)) : '\u2014'],
@@ -1300,7 +1547,7 @@ function showDrawerDetail(id) {
         ];
         link = d.url || '';
     } else if (type === 'election') {
-        title = (d.country || '?') + ' \u2014 ' + (d.election_type || 'Election');
+        title = (d.country || '?') + ' \u2014 ' + (d.election_type || _t('Election'));
         subtitle = d.date || '';
         fields = [
             ['Country', d.country || '\u2014'],
@@ -1312,7 +1559,7 @@ function showDrawerDetail(id) {
             ['Description', d.description || '\u2014']
         ];
     } else if (type === 'outage') {
-        title = d.entity_name || d.country || d.location || 'Outage';
+        title = d.entity_name || d.country || d.location || _t('Outage');
         subtitle = d.entity_type || '';
         fields = [
             ['Entity', d.entity_name || '\u2014'],
@@ -1323,7 +1570,7 @@ function showDrawerDetail(id) {
             ['End', d.until || d.end || '\u2014']
         ];
     } else if (type === 'navwarning') {
-        title = (d.navArea || d.area || 'Nav Warning');
+        title = (d.navArea || d.area || _t('Nav Warning'));
         subtitle = d.status || '';
         fields = [
             ['Area', d.navArea || d.area || '\u2014'],
@@ -1332,19 +1579,19 @@ function showDrawerDetail(id) {
             ['Text', d.text || d.description || '\u2014']
         ];
     } else if (type === 'aoi') {
-        title = d.name || 'AOI';
+        title = d.name || _t('AOI');
         var ak = d.kind || 'circle';
-        subtitle = ak.toUpperCase() + (ak === 'circle' ? ' • ' + d.radius_km + ' km radius' : ak === 'corridor' && d.geometry ? ' • ' + d.geometry.width_km + ' km wide' : '');
+        subtitle = ak.toUpperCase() + (ak === 'circle' ? ' • ' + _t('{n} km radius', {n: d.radius_km}) : ak === 'corridor' && d.geometry ? ' • ' + _t('{n} km wide', {n: d.geometry.width_km}) : '');
         var ls = d.last_sweep;
         fields = [
             ['Name', d.name || '—'],
             ['Shape', ak],
             ['Center', (d.lat != null ? d.lat.toFixed(3) : '—') + ', ' + (d.lon != null ? d.lon.toFixed(3) : '—')],
-            ['Last sweep', ls ? ago(ls.taken_at * 1000) + ' ago (' + ls.total + ' items)' : 'never — run intel-collector --sources aoi', ls ? '' : 'high']
+            ['Last sweep', ls ? _t('{age} ago ({n} items)', {age: ago(ls.taken_at * 1000), n: ls.total}) : _t('never — run intel-collector --sources aoi'), ls ? '' : 'high']
         ];
         if (ls) { Object.keys(ls.counts).sort().forEach(function(k) { fields.push([k.replace(/_/g, ' '), String(ls.counts[k])]); }); }
     } else if (type === 'pipeline') {
-        title = d.name || 'Pipeline';
+        title = d.name || _t('Pipeline');
         subtitle = d.route || '';
         var ps = d.status || '';
         fields = [
@@ -1356,7 +1603,7 @@ function showDrawerDetail(id) {
             ['Notes', d.notes || '\u2014']
         ];
     } else if (type === 'service') {
-        title = (d.provider || '?') + ' \u2014 ' + (d.title || 'Incident');
+        title = (d.provider || '?') + ' \u2014 ' + (d.title || _t('Incident'));
         subtitle = d.severity || '';
         fields = [
             ['Provider', d.provider || '\u2014'],
@@ -1367,7 +1614,7 @@ function showDrawerDetail(id) {
         ];
         link = d.link || '';
     } else if (type === 'airtraffic') {
-        title = d.callsign || 'Aircraft';
+        title = d.callsign || _t('Aircraft');
         subtitle = d.origin || '';
         fields = [
             ['Callsign', d.callsign || '\u2014'],
@@ -1377,7 +1624,7 @@ function showDrawerDetail(id) {
             ['Coordinates', d.lat != null ? d.lat + ', ' + d.lon : '\u2014']
         ];
     } else if (type === 'traffic_city') {
-        title = d.name || 'City';
+        title = d.name || _t('City');
         subtitle = d.country || '';
         var congPct = d.congestion_pct || 0;
         fields = [
@@ -1389,7 +1636,7 @@ function showDrawerDetail(id) {
             ['Coordinates', d.lat + ', ' + d.lon]
         ];
     } else if (type === 'webcam') {
-        title = d.title || 'Camera';
+        title = d.title || _t('Camera');
         subtitle = (d.city || '') + (d.country ? ', ' + d.country : '');
         fields = [
             ['City', d.city || '\u2014'],
@@ -1421,7 +1668,7 @@ function showDrawerDetail(id) {
 
     var body = '';
     if (type === 'webcam' && d.preview_url) {
-        body += '<img src="' + esc(d.preview_url) + '" style="width:100%;border-radius:6px;margin-bottom:10px;" alt="' + esc(d.title || 'Webcam') + '" onerror="this.style.display=\'none\'">';
+        body += '<img src="' + esc(d.preview_url) + '" style="width:100%;border-radius:6px;margin-bottom:10px;" alt="' + esc(d.title || _t('Webcam')) + '" onerror="this.style.display=\'none\'">';
     }
     body += fields.map(function(f) {
         return '<div class="df"><span class="df-l">' + esc(f[0]) + '</span><span class="df-v ' + (f[2] || '') + '">' + esc(String(f[1])) + '</span></div>';
@@ -1441,6 +1688,24 @@ function showDrawerDetail(id) {
     }
 }
 
+// ════════════ MAP ATTRIBUTION LINKS ════════════
+// Leaflet's attribution control is outside the normal link flow; in the pywebview
+// window a plain navigation would replace the whole dashboard. Capture-phase,
+// delegated: always hand these links to the OS browser instead.
+document.addEventListener('click', function(e) {
+    var a = e.target && e.target.closest ? e.target.closest('.leaflet-control-attribution a') : null;
+    if (!a) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var href = a.getAttribute('href');
+    if (!href) return;
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.open_url) {
+        window.pywebview.api.open_url(href);
+    } else {
+        window.open(href, '_blank', 'noopener');
+    }
+}, true);
+
 // ════════════ GLOBAL LINK INTERCEPTOR ════════════
 document.addEventListener('click', function(e) {
     var a = e.target.closest('a[href]');
@@ -1451,7 +1716,12 @@ document.addEventListener('click', function(e) {
     if (href.startsWith('http://') || href.startsWith('https://') || a.hasAttribute('data-external')) {
         e.preventDefault();
         e.stopPropagation();
-        window.open(href, '_blank', 'noopener,noreferrer');
+        // Inside the macOS .app (pywebview) _blank is a no-op: hand the URL to the OS browser.
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.open_url) {
+            window.pywebview.api.open_url(href);
+        } else {
+            window.open(href, '_blank', 'noopener,noreferrer');
+        }
     }
 });
 
@@ -1601,9 +1871,7 @@ document.addEventListener('keydown', function(e) {
 function updateMapQuakes(data) {
     mapLayers.quakes.clearLayers();
     if (!data || data.error) { $('#cntQuakes').textContent = '0'; return; }
-    var quakes = (data.earthquakes || []).filter(function(q) {
-        return _withinTimeWindow(q.time || q.timestamp);
-    });
+    var quakes = _windowQuakes(data);
     $('#cntQuakes').textContent = quakes.length;
     quakes.slice(0, 100).forEach(function(q) {
         if (q.latitude == null || q.longitude == null) return;
@@ -1637,8 +1905,8 @@ function updateMapMilitary(data) {
 function updateMapConflict(data) {
     mapLayers.conflict.clearLayers();
     if (!data || data.error) { $('#cntConflict').textContent = '0'; return; }
-    var events = data.events || [];
-    $('#cntConflict').textContent = data.count || events.length;
+    var events = _windowConflictEvents(data);
+    $('#cntConflict').textContent = _windowConflictCount(data);
     events.slice(0, 200).forEach(function(e) {
         var lat = e.latitude || e.lat, lon = e.longitude || e.lon;
         if (lat == null || lon == null) return;
@@ -1650,7 +1918,7 @@ function updateMapConflict(data) {
             icon: L.divIcon({ className: 'mk-conflict', iconSize: [size, size], iconAnchor: [size/2, size/2] })
         });
         var tip = label + ' \u2014 ' + (e.country || '');
-        if (fat > 0) tip += ' (' + fat + ' fatal)';
+        if (fat > 0) tip += ' (' + _t('{n} fatal', {n: fat}) + ')';
         else if (e.severity) tip += ' [' + e.severity + ']';
         mk.bindTooltip(tip, { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
         mk.on('click', function() { showDetail('conflict', e); });
@@ -1675,7 +1943,7 @@ function updateMapFires(data) {
             var mk = L.marker([c.lat, c.lon], {
                 icon: L.divIcon({ className: 'mk-fire', iconSize: [size, size], iconAnchor: [size/2, size/2] })
             });
-            mk.bindTooltip(c.fire_count + ' fires \u2014 ' + rName, { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
+            mk.bindTooltip(_t('{n} fires \u2014 {region}', {n: c.fire_count, region: rName}), { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
             mk.on('click', function() { showDetail('fire', obj); });
             mk.addTo(mapLayers.fires);
         });
@@ -1683,7 +1951,7 @@ function updateMapFires(data) {
     var clusterCount = mapLayers.fires.getLayers().length;
     // Show cluster count for sidebar (what's on the map), full total in tooltip
     $('#cntFires').textContent = clusterCount;
-    $('#cntFires').title = (data.total_fires || total) + ' individual fire detections';
+    $('#cntFires').title = _t('{n} individual fire detections', {n: (data.total_fires || total)});
 }
 
 function updateMapConvergence(data) {
@@ -1698,7 +1966,7 @@ function updateMapConvergence(data) {
         var mk = L.marker([h.lat, h.lon], {
             icon: L.divIcon({ className: 'mk-conv', iconSize: [size, size], iconAnchor: [size/2, size/2] })
         });
-        mk.bindTooltip((h.name || '?') + ' \u2014 Score ' + score.toFixed(1), { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
+        mk.bindTooltip(_t('{name} \u2014 Score {score}', {name: (h.name || '?'), score: score.toFixed(1)}), { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
         mk.on('click', function() { showDetail('convergence', h); });
         mk.addTo(mapLayers.convergence);
     });
@@ -1831,7 +2099,7 @@ function updateMapInfra(data) {
         var mk = L.marker([tr.lat, tr.lon], {
             icon: L.divIcon({ className: iconCls, iconSize: [8, 8], iconAnchor: [4, 4] })
         });
-        mk.bindTooltip('<b>' + esc(tr.name) + '</b> <span style="opacity:0.7">' + esc(tr.type) + ' · ' + (tr.oil_flow_mbd || 0) + ' mbd oil · ~' + (tr.daily_vessel_transits || 0) + ' vessels/day</span>', { className: 'mk-tip', direction: 'top', offset: [0, -5] });
+        mk.bindTooltip('<b>' + esc(tr.name) + '</b> <span style="opacity:0.7">' + esc(tr.type) + ' · ' + _t('{mbd} mbd oil · ~{vessels} vessels/day', {mbd: (tr.oil_flow_mbd || 0), vessels: (tr.daily_vessel_transits || 0)}) + '</span>', { className: 'mk-tip', direction: 'top', offset: [0, -5] });
         mk.on('click', function() {
             showDetail('trade_route', {
                 name: tr.name, type: tr.type, oil_flow_mbd: tr.oil_flow_mbd,
@@ -1922,7 +2190,7 @@ function updateMapTraffic(data) {
         var mk = L.marker([c.lat, c.lon], {
             icon: L.divIcon({ className: 'mk-traffic' + cls, iconSize: [size, size], iconAnchor: [size/2, size/2] })
         });
-        mk.bindTooltip(esc(c.name) + ' ' + pct + '% congestion', { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
+        mk.bindTooltip(esc(c.name) + ' ' + _t('{pct}% congestion', {pct: pct}), { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
         mk.on('click', function() { showDetail('traffic_city', c); });
         mk.addTo(mapLayers.traffic);
     });
@@ -1957,7 +2225,7 @@ function updateMapWebcams(data) {
         var mk = L.marker([cam.lat, cam.lon], {
             icon: L.divIcon({ className: 'mk-cam', iconSize: [7, 7], iconAnchor: [3.5, 3.5] })
         });
-        mk.bindTooltip(esc(cam.title || 'Camera') + '<br><span style="opacity:0.7">' + esc(cam.city || '') + '</span>', { className: 'mk-tip', direction: 'top', offset: [0, -4] });
+        mk.bindTooltip(esc(cam.title || _t('Camera')) + '<br><span style="opacity:0.7">' + esc(cam.city || '') + '</span>', { className: 'mk-tip', direction: 'top', offset: [0, -4] });
         mk.on('click', function() { showDetail('webcam', cam); });
         mk.addTo(mapLayers.webcams);
     });
@@ -2027,17 +2295,17 @@ function _geolocateArticle(article) {
 function updateMapNews(data) {
     mapLayers.news.clearLayers();
     if (!data || data.error) { $('#cntNews').textContent = '0'; return; }
-    var articles = (data.articles || data.items || []).filter(function(a) {
-        return _withinTimeWindow(a.published || a.pub_date || a.timestamp);
-    });
+    var articles = _windowArticles(data.articles || data.items);
     var placed = 0;
     articles.forEach(function(a) {
         var geo = _geolocateArticle(a);
         if (!geo) return;
         placed++;
-        // Jitter to avoid exact overlap
-        var jlat = geo.lat + (Math.random() - 0.5) * 2;
-        var jlon = geo.lon + (Math.random() - 0.5) * 2;
+        // Jitter to avoid exact overlap; keep it across redraws (time window
+        // changes) so markers do not hop.
+        var kept = a._geo_country === geo.country && a._geo_lat != null && a._geo_lon != null;
+        var jlat = kept ? a._geo_lat : geo.lat + (Math.random() - 0.5) * 2;
+        var jlon = kept ? a._geo_lon : geo.lon + (Math.random() - 0.5) * 2;
         a._geo_country = geo.country;
         a._geo_lat = jlat;
         a._geo_lon = jlon;
@@ -2076,18 +2344,16 @@ function updateAlertBanner(data) {
 function updateHudStats(data) {
     var pills = [];
     if (data.earthquakes && !data.earthquakes.error) {
-        var qc = (data.earthquakes.earthquakes || []).length;
-        pills.push('<div class="stat-pill"><span class="v">' + qc + '</span><span class="l">Quakes</span></div>');
+        var qc = _windowQuakes(data.earthquakes).length;
+        pills.push('<div class="stat-pill" data-layer="quakes"><span class="v">' + qc + '</span><span class="l">Quakes</span></div>');
     }
     if (data.military_flights && !data.military_flights.error) {
-        pills.push('<div class="stat-pill"><span class="v">' + (data.military_flights.count || 0) + '</span><span class="l">Aircraft</span></div>');
+        pills.push('<div class="stat-pill" data-layer="military"><span class="v">' + (data.military_flights.count || 0) + '</span><span class="l">Aircraft</span></div>');
     }
-    var conflictSrc = (data.acled_events && !data.acled_events.error && data.acled_events.count > 0) ? data.acled_events
-        : (data.ucdp_events && !data.ucdp_events.error && data.ucdp_events.count > 0) ? data.ucdp_events
-        : data.conflict_zones;
+    var conflictSrc = _conflictSource(data);
     if (conflictSrc && !conflictSrc.error) {
-        var ac = conflictSrc.count || 0;
-        pills.push('<div class="stat-pill"><span class="v' + (ac > 100 ? ' warn' : '') + '">' + ac + '</span><span class="l">Conflict</span></div>');
+        var ac = _windowConflictCount(conflictSrc);
+        pills.push('<div class="stat-pill" data-layer="conflict"><span class="v' + (ac > 100 ? ' warn' : '') + '">' + ac + '</span><span class="l">Conflict</span></div>');
     }
     if (data.cyber_threats && !data.cyber_threats.error) {
         pills.push('<div class="stat-pill"><span class="v">' + ((data.cyber_threats.threats || []).length) + '</span><span class="l">Cyber IOC</span></div>');
@@ -2096,7 +2362,7 @@ function updateHudStats(data) {
         var fbr = data.wildfires.fires_by_region || {};
         var fireClusterCount = 0;
         for (var rr in fbr) { if (fbr.hasOwnProperty(rr)) fireClusterCount += (fbr[rr].top_clusters || []).length; }
-        pills.push('<div class="stat-pill"><span class="v' + (fireClusterCount > 500 ? ' crit' : fireClusterCount > 100 ? ' warn' : '') + '">' + fireClusterCount + '</span><span class="l">Fires</span></div>');
+        pills.push('<div class="stat-pill" data-layer="fires"><span class="v' + (fireClusterCount > 500 ? ' crit' : fireClusterCount > 100 ? ' warn' : '') + '">' + fireClusterCount + '</span><span class="l">Fires</span></div>');
     }
     if (data.displacement && !data.displacement.error && data.displacement.global_totals) {
         pills.push('<div class="stat-pill"><span class="v warn">' + fmtBigPlain(data.displacement.global_totals.grand_total || 0) + '</span><span class="l">Displaced</span></div>');
@@ -2122,7 +2388,7 @@ function updateHudStats(data) {
         if (hc > 0) pills.push('<div class="stat-pill"><span class="v crit">' + hc + '</span><span class="l">Outbreak</span></div>');
     }
     if (data.nuclear_monitor && !data.nuclear_monitor.error && data.nuclear_monitor.critical_flags > 0) {
-        pills.push('<div class="stat-pill"><span class="v crit">' + data.nuclear_monitor.critical_flags + '</span><span class="l">Nuke Flag</span></div>');
+        pills.push('<div class="stat-pill" data-layer="nuclear"><span class="v crit">' + data.nuclear_monitor.critical_flags + '</span><span class="l">Nuke Flag</span></div>');
     }
     if (data.strategic_posture && !data.strategic_posture.error) {
         var ps = data.strategic_posture.composite_score || 0;
@@ -2130,17 +2396,17 @@ function updateHudStats(data) {
         pills.push('<div class="stat-pill"><span class="v' + psCls + '">' + ps.toFixed(0) + '</span><span class="l">Posture</span></div>');
     }
     if (data.population_exposure && !data.population_exposure.error && data.population_exposure.exposed_city_count > 0) {
-        pills.push('<div class="stat-pill"><span class="v warn">' + (data.population_exposure.total_exposed_population_formatted || '0') + '</span><span class="l">Exposed</span></div>');
+        pills.push('<div class="stat-pill" data-layer="exposure"><span class="v warn">' + (data.population_exposure.total_exposed_population_formatted || '0') + '</span><span class="l">Exposed</span></div>');
     }
     if (data.domestic_flights && !data.domestic_flights.error && data.domestic_flights.total_aircraft > 0) {
-        pills.push('<div class="stat-pill"><span class="v">' + fmtBigPlain(data.domestic_flights.total_aircraft) + '</span><span class="l">Airborne</span></div>');
+        pills.push('<div class="stat-pill" data-layer="airtraffic"><span class="v">' + fmtBigPlain(data.domestic_flights.total_aircraft) + '</span><span class="l">Airborne</span></div>');
     }
     if (data.traffic_flow && !data.traffic_flow.error && data.traffic_flow.count > 0) {
         var tAvg = data.traffic_flow.global_avg_congestion || 0;
-        pills.push('<div class="stat-pill"><span class="v' + (tAvg >= 40 ? ' crit' : tAvg >= 20 ? ' warn' : '') + '">' + tAvg.toFixed(0) + '%</span><span class="l">Traffic</span></div>');
+        pills.push('<div class="stat-pill" data-layer="traffic"><span class="v' + (tAvg >= 40 ? ' crit' : tAvg >= 20 ? ' warn' : '') + '">' + tAvg.toFixed(0) + '%</span><span class="l">Traffic</span></div>');
     }
     if (data.webcams && !data.webcams.error && data.webcams.count > 0) {
-        pills.push('<div class="stat-pill"><span class="v">' + data.webcams.count + '</span><span class="l">Cams</span></div>');
+        pills.push('<div class="stat-pill" data-layer="webcams"><span class="v">' + data.webcams.count + '</span><span class="l">Cams</span></div>');
     }
     $('#hudStats').innerHTML = safe(pills.join(''));
 }
@@ -2156,13 +2422,13 @@ function updateDrawer(data) {
     if (data.strategic_posture && !data.strategic_posture.error) {
         var sp = data.strategic_posture;
         var compScore = sp.composite_score || 0;
-        var riskLvl = sp.risk_level || 'UNKNOWN';
+        var riskLvl = sp.risk_level || _t('UNKNOWN');
         var riskColor = riskLvl === 'CRITICAL' ? 'var(--red)' : riskLvl === 'HIGH' ? 'var(--amber)' : riskLvl === 'ELEVATED' ? '#ff9100' : 'var(--green)';
-        h += '<div class="sh">STRATEGIC POSTURE</div>';
+        h += '<div class="sh" data-sh="STRATEGIC POSTURE">STRATEGIC POSTURE</div>';
         h += '<div style="display:flex;align-items:center;gap:12px;padding:6px 0">';
         h += '<div style="font-size:2rem;font-weight:700;color:' + riskColor + '">' + compScore.toFixed(0) + '</div>';
         h += '<div><div style="font-size:0.85rem;font-weight:600;color:' + riskColor + '">' + esc(riskLvl) + '</div>';
-        h += '<div class="dim" style="font-size:0.6rem">' + (sp.domains_assessed || 0) + ' domains assessed</div></div>';
+        h += '<div class="dim" style="font-size:0.6rem">' + _t('{n} domains assessed', {n: (sp.domains_assessed || 0)}) + '</div></div>';
         h += '</div>';
         var ds = sp.domain_scores || {};
         h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px">';
@@ -2192,7 +2458,7 @@ function updateDrawer(data) {
 
     // ── ALERTS ──
     if (data.alert_digest && !data.alert_digest.error && data.alert_digest.alert_count > 0) {
-        h += '<div class="sh">ALERTS</div>';
+        h += '<div class="sh" data-sh="ALERTS">ALERTS</div>';
         var byPri = data.alert_digest.by_priority || {};
         h += '<div class="mini-row">';
         if (byPri.critical) h += '<div class="mini-box"><div class="v" style="color:var(--red)">' + byPri.critical + '</div><div class="l">Critical</div></div>';
@@ -2211,7 +2477,7 @@ function updateDrawer(data) {
     }
 
     // ── MARKETS ──
-    h += '<div class="sh">MARKETS</div>';
+    h += '<div class="sh" data-sh="MARKETS">MARKETS</div>';
     if (data.market_quotes && !data.market_quotes.error) {
         var quotes = data.market_quotes.quotes || data.market_quotes.data || [];
         if (quotes.length) {
@@ -2333,7 +2599,7 @@ function updateDrawer(data) {
             if (r && r.price_cents_kwh != null) eRateRows.push({name: s.charAt(0).toUpperCase() + s.slice(1), price: r.price_cents_kwh, period: r.period, change: r.change, change_pct: r.change_pct});
         });
         if (eRateRows.length) {
-            h += '<div class="sub">Electricity (\u00A2/kWh) — ' + esc(er.state || 'US') + ' <span class="dim" style="font-size:0.55rem">' + esc(eRateRows[0].period || '') + '</span></div>';
+            h += '<div class="sub">' + _t('Electricity (\u00A2/kWh) — {state}', {state: esc(er.state || 'US')}) + ' <span class="dim" style="font-size:0.55rem">' + esc(eRateRows[0].period || '') + '</span></div>';
             h += '<table class="dtable"><thead><tr><th>Sector</th><th>\u00A2/kWh</th><th>MoM</th></tr></thead><tbody>';
             eRateRows.forEach(function(item) {
                 var chg = item.change_pct != null ? '<span class="' + cls(item.change_pct) + '">' + fmtPct(item.change_pct) + '%</span>' : '<span class="dim">\u2014</span>';
@@ -2354,7 +2620,7 @@ function updateDrawer(data) {
     }
 
     // ── SECURITY ──
-    h += '<div class="sh">SECURITY</div>';
+    h += '<div class="sh" data-sh="SECURITY">SECURITY</div>';
     if (data.cyber_threats && !data.cyber_threats.error) {
         var threats = data.cyber_threats.threats || [];
         var bySev = data.cyber_threats.by_severity || {};
@@ -2396,7 +2662,7 @@ function updateDrawer(data) {
         var svcInc = data.service_status.incidents || [];
         var activeSvc = data.service_status.active_incidents || 0;
         if (svcInc.length) {
-            h += '<div class="sub">Cloud Services' + (activeSvc > 0 ? ' (' + activeSvc + ' active)' : '') + '</div><table class="dtable"><thead><tr><th>Provider</th><th>Incident</th><th>Sev</th></tr></thead><tbody>';
+            h += '<div class="sub">' + _t('Cloud Services') + (activeSvc > 0 ? ' (' + _t('{n} active', {n: activeSvc}) + ')' : '') + '</div><table class="dtable"><thead><tr><th>Provider</th><th>Incident</th><th>Sev</th></tr></thead><tbody>';
             svcInc.slice(0, 10).forEach(function(s) {
                 var sevCls = s.severity === 'critical' ? 'down' : s.severity === 'high' ? 'warn' : 'dim';
                 var did = _storeItem('service', s);
@@ -2408,7 +2674,7 @@ function updateDrawer(data) {
     if (data.nav_warnings && !data.nav_warnings.error) {
         var navs = data.nav_warnings.warnings || [];
         if (navs.length) {
-            h += '<div class="sub">Nav Warnings (' + navs.length + ')</div><table class="dtable"><thead><tr><th>Area</th><th>Warning</th></tr></thead><tbody>';
+            h += '<div class="sub">' + _t('Nav Warnings ({n})', {n: navs.length}) + '</div><table class="dtable"><thead><tr><th>Area</th><th>Warning</th></tr></thead><tbody>';
             navs.slice(0, 8).forEach(function(w) {
                 var did = _storeItem('navwarning', w);
                 h += '<tr data-click="' + did + '"><td class="bright">' + esc(w.navArea || w.area || '?') + '</td><td class="dim">' + esc(trunc(w.text || w.description || '\u2014', 40)) + '</td></tr>';
@@ -2449,7 +2715,7 @@ function updateDrawer(data) {
     }
 
     // ── INTELLIGENCE ──
-    h += '<div class="sh">INTELLIGENCE</div>';
+    h += '<div class="sh" data-sh="INTELLIGENCE">INTELLIGENCE</div>';
     if (data.trending_keywords && !data.trending_keywords.error) {
         var kws = data.trending_keywords.keywords || data.trending_keywords.data || [];
         if (kws.length) {
@@ -2477,7 +2743,7 @@ function updateDrawer(data) {
     if (data.ucdp_events && !data.ucdp_events.error) {
         var ucdp = data.ucdp_events.events || [];
         if (ucdp.length) {
-            h += '<div class="sub">UCDP Events (' + (data.ucdp_events.count || ucdp.length) + ')</div><table class="dtable"><thead><tr><th>Conflict</th><th>Deaths</th></tr></thead><tbody>';
+            h += '<div class="sub">' + _t('UCDP Events ({n})', {n: (data.ucdp_events.count || ucdp.length)}) + '</div><table class="dtable"><thead><tr><th>Conflict</th><th>Deaths</th></tr></thead><tbody>';
             ucdp.slice(0, 10).forEach(function(e) {
                 var best = e.best || e.best_fatality_estimate || 0;
                 var did = _storeItem('conflict', e);
@@ -2489,7 +2755,7 @@ function updateDrawer(data) {
     if (data.conflict_zones && !data.conflict_zones.error) {
         var czones = data.conflict_zones.events || [];
         if (czones.length) {
-            h += '<div class="sub">Active Conflict Zones (' + (data.conflict_zones.count || czones.length) + ')</div><table class="dtable"><thead><tr><th>Zone</th><th>Severity</th></tr></thead><tbody>';
+            h += '<div class="sub">' + _t('Active Conflict Zones ({n})', {n: (data.conflict_zones.count || czones.length)}) + '</div><table class="dtable"><thead><tr><th>Zone</th><th>Severity</th></tr></thead><tbody>';
             czones.forEach(function(e) {
                 var sev = e.severity || 'unknown';
                 var cls = sev === 'critical' ? 'down' : sev === 'high' ? 'warn' : 'dim';
@@ -2566,7 +2832,7 @@ function updateDrawer(data) {
     // ── HEALTH ──
     if (data.disease_outbreaks && !data.disease_outbreaks.error) {
         var dob = data.disease_outbreaks;
-        h += '<div class="sh">HEALTH</div>';
+        h += '<div class="sh" data-sh="HEALTH">HEALTH</div>';
         h += '<div class="mini-row">';
         h += '<div class="mini-box"><div class="v">' + (dob.count || 0) + '</div><div class="l">Alerts</div></div>';
         h += '<div class="mini-box"><div class="v' + ((dob.high_concern_count || 0) > 0 ? ' crit' : '') + '">' + (dob.high_concern_count || 0) + '</div><div class="l">High Concern</div></div>';
@@ -2598,7 +2864,7 @@ function updateDrawer(data) {
         var ecal = data.election_calendar;
         var elections = ecal.elections || [];
         if (elections.length) {
-            h += '<div class="sh">ELECTIONS</div>';
+            h += '<div class="sh" data-sh="ELECTIONS">ELECTIONS</div>';
             var hiRisk = ecal.highest_risk;
             if (hiRisk) {
                 h += '<div class="mini-row"><div class="mini-box"><div class="v warn">' + fmtNum(hiRisk.risk_score || 0, 0) + '</div><div class="l">Top Risk</div></div>';
@@ -2621,7 +2887,7 @@ function updateDrawer(data) {
     // ── SHIPPING ──
     if (data.shipping_index && !data.shipping_index.error) {
         var ship = data.shipping_index;
-        h += '<div class="sh">SHIPPING</div>';
+        h += '<div class="sh" data-sh="SHIPPING">SHIPPING</div>';
         var stress = ship.stress_score || 0;
         var stressColor = stress >= 60 ? 'var(--red)' : stress >= 30 ? 'var(--amber)' : 'var(--green)';
         h += '<div class="gauge-row">';
@@ -2649,7 +2915,7 @@ function updateDrawer(data) {
     // ── FLEET ──
     if (data.fleet_report && !data.fleet_report.error) {
         var fr = data.fleet_report;
-        h += '<div class="sh">FLEET</div>';
+        h += '<div class="sh" data-sh="FLEET">FLEET</div>';
         var fScore = fr.readiness_score || 0;
         var fColor = fScore >= 70 ? 'var(--red)' : fScore >= 40 ? 'var(--amber)' : 'var(--green)';
         h += '<div class="mini-row">';
@@ -2672,7 +2938,7 @@ function updateDrawer(data) {
     // ── SOCIAL ──
     if (data.social_signals && !data.social_signals.error) {
         var soc = data.social_signals;
-        h += '<div class="sh">SOCIAL</div>';
+        h += '<div class="sh" data-sh="SOCIAL">SOCIAL</div>';
         var vel = soc.velocity_metrics || {};
         if (Object.keys(vel).length) {
             h += '<div class="mini-row">';
@@ -2697,7 +2963,7 @@ function updateDrawer(data) {
     // ── NUCLEAR ──
     if (data.nuclear_monitor && !data.nuclear_monitor.error) {
         var nuc = data.nuclear_monitor;
-        h += '<div class="sh">NUCLEAR MONITOR</div>';
+        h += '<div class="sh" data-sh="NUCLEAR MONITOR">NUCLEAR MONITOR</div>';
         h += '<div class="mini-row">';
         h += '<div class="mini-box"><div class="v">' + (nuc.total_flagged_events || 0) + '</div><div class="l">Flagged</div></div>';
         h += '<div class="mini-box"><div class="v' + ((nuc.critical_flags || 0) > 0 ? ' crit' : '') + '">' + (nuc.critical_flags || 0) + '</div><div class="l">Critical</div></div>';
@@ -2718,7 +2984,7 @@ function updateDrawer(data) {
     // ── POPULATION EXPOSURE ──
     if (data.population_exposure && !data.population_exposure.error && data.population_exposure.exposed_city_count > 0) {
         var pe = data.population_exposure;
-        h += '<div class="sh">POPULATION EXPOSURE</div>';
+        h += '<div class="sh" data-sh="POPULATION EXPOSURE">POPULATION EXPOSURE</div>';
         h += '<div class="mini-row">';
         h += '<div class="mini-box"><div class="v warn">' + esc(pe.total_exposed_population_formatted || '0') + '</div><div class="l">Total Exposed</div></div>';
         h += '<div class="mini-box"><div class="v">' + (pe.exposed_city_count || 0) + '</div><div class="l">Cities</div></div>';
@@ -2750,7 +3016,7 @@ function updateDrawer(data) {
 
     // ── GEOSPATIAL ──
     if (data.military_bases || data.strategic_ports || data.pipelines || data.nuclear_facilities) {
-        h += '<div class="sh">GEOSPATIAL</div>';
+        h += '<div class="sh" data-sh="GEOSPATIAL">GEOSPATIAL</div>';
         h += '<div class="mini-row">';
         h += '<div class="mini-box"><div class="v">' + ((data.military_bases || {}).count || 0) + '</div><div class="l">Bases</div></div>';
         h += '<div class="mini-box"><div class="v">' + ((data.strategic_ports || {}).count || 0) + '</div><div class="l">Ports</div></div>';
@@ -2773,7 +3039,7 @@ function updateDrawer(data) {
     // ── TRENDS ──
     if (data.weekly_trends && !data.weekly_trends.error) {
         var wt = data.weekly_trends;
-        h += '<div class="sh">TRENDS</div>';
+        h += '<div class="sh" data-sh="TRENDS">TRENDS</div>';
         h += '<div class="mini-row">';
         h += '<div class="mini-box"><div class="v">' + (wt.trend_count || 0) + '</div><div class="l">Metrics</div></div>';
         h += '<div class="mini-box"><div class="v' + ((wt.current_anomaly_count || 0) > 0 ? ' warn' : '') + '">' + (wt.current_anomaly_count || 0) + '</div><div class="l">Anomalies</div></div>';
@@ -2800,7 +3066,7 @@ function updateDrawer(data) {
     // ── DOMESTIC AIR TRAFFIC ──
     if (data.domestic_flights && !data.domestic_flights.error && data.domestic_flights.total_aircraft > 0) {
         var df = data.domestic_flights;
-        h += '<div class="sh">AIR TRAFFIC</div>';
+        h += '<div class="sh" data-sh="AIR TRAFFIC">AIR TRAFFIC</div>';
         h += '<div class="mini-row"><div class="mini-box"><div class="v">' + fmtBigPlain(df.total_aircraft) + '</div><div class="l">Airborne</div></div></div>';
         var regions = df.by_region || {};
         h += '<table class="dtable"><thead><tr><th>Region</th><th>Total</th><th>Commercial</th><th>General</th></tr></thead><tbody>';
@@ -2823,7 +3089,7 @@ function updateDrawer(data) {
     // ── TRAFFIC ──
     if (data.traffic_flow && !data.traffic_flow.error && data.traffic_flow.count > 0) {
         var tf = data.traffic_flow;
-        h += '<div class="sh">ROAD TRAFFIC</div>';
+        h += '<div class="sh" data-sh="ROAD TRAFFIC">ROAD TRAFFIC</div>';
         h += '<div class="mini-row">';
         var avgCls = tf.global_avg_congestion >= 40 ? ' crit' : tf.global_avg_congestion >= 20 ? ' warn' : '';
         h += '<div class="mini-box"><div class="v' + avgCls + '">' + fmtNum(tf.global_avg_congestion, 0) + '%</div><div class="l">Avg Congestion</div></div>';
@@ -2840,12 +3106,12 @@ function updateDrawer(data) {
     // ── WEBCAMS ──
     if (data.webcams && !data.webcams.error && data.webcams.count > 0) {
         var wc = data.webcams;
-        h += '<div class="sh">CCTV / WEBCAMS</div>';
-        h += '<div class="dim" style="font-size:0.65rem;padding:2px 0">' + wc.count + ' cameras (' + esc(wc.category || 'traffic') + ')</div>';
+        h += '<div class="sh" data-sh="CCTV / WEBCAMS">CCTV / WEBCAMS</div>';
+        h += '<div class="dim" style="font-size:0.65rem;padding:2px 0">' + _t('{n} cameras ({cat})', {n: wc.count, cat: esc(wc.category || 'traffic')}) + '</div>';
         (wc.cameras || []).slice(0, 12).forEach(function(cam) {
             var did = _storeItem('webcam', cam);
             h += '<div class="drawer-item" data-click="' + did + '" style="padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04)">';
-            h += '<div class="bright" style="font-size:0.7rem">' + esc(cam.title || 'Camera') + '</div>';
+            h += '<div class="bright" style="font-size:0.7rem">' + esc(cam.title || _t('Camera')) + '</div>';
             h += '<div class="dim" style="font-size:0.6rem">' + esc(cam.city || '') + (cam.country ? ', ' + esc(cam.country) : '') + '</div>';
             h += '</div>';
         });
@@ -2854,7 +3120,7 @@ function updateDrawer(data) {
     // ── USNI FLEET TRACKER ──
     if (data.usni_fleet && !data.usni_fleet.error && data.usni_fleet.ship_count > 0) {
         var uf = data.usni_fleet;
-        h += '<div class="sh">USNI FLEET TRACKER</div>';
+        h += '<div class="sh" data-sh="USNI FLEET TRACKER">USNI FLEET TRACKER</div>';
         h += '<div class="dim" style="font-size:0.6rem;padding:2px 0">' + esc(uf.report_title || '') + '</div>';
         if (uf.force_totals && uf.force_totals.battle_force) {
             var bf = uf.force_totals.battle_force;
@@ -2869,7 +3135,7 @@ function updateDrawer(data) {
         if (uf.region_breakdown) {
             var regions = Object.entries(uf.region_breakdown).sort(function(a,b){return b[1]-a[1];});
             regions.forEach(function(r) {
-                h += '<div style="font-size:0.65rem;padding:1px 0"><span class="bright">' + esc(r[0]) + '</span> <span class="dim">' + r[1] + ' ships</span></div>';
+                h += '<div style="font-size:0.65rem;padding:1px 0"><span class="bright">' + esc(r[0]) + '</span> <span class="dim">' + _t('{n} ships', {n: r[1]}) + '</span></div>';
             });
         }
         (uf.ships || []).slice(0, 15).forEach(function(s) {
@@ -2881,7 +3147,7 @@ function updateDrawer(data) {
     // ── BTC TECHNICALS ──
     if (data.btc_technicals && !data.btc_technicals.error && data.btc_technicals.price) {
         var bt = data.btc_technicals;
-        h += '<div class="sh">BTC TECHNICALS</div>';
+        h += '<div class="sh" data-sh="BTC TECHNICALS">BTC TECHNICALS</div>';
         var crossCls = bt.cross_signal === 'golden_cross' ? 'good' : bt.cross_signal === 'death_cross' ? 'crit' : 'dim';
         var crossLabel = bt.cross_signal === 'golden_cross' ? 'GOLDEN CROSS' : bt.cross_signal === 'death_cross' ? 'DEATH CROSS' : 'NEUTRAL';
         h += '<div class="mini-boxes" style="margin:6px 0">';
@@ -2906,8 +3172,8 @@ function updateDrawer(data) {
     // ── CENTRAL BANK RATES ──
     if (data.central_bank_rates && !data.central_bank_rates.error && (data.central_bank_rates.rates || []).length > 0) {
         var cbr = data.central_bank_rates;
-        h += '<div class="sh">CENTRAL BANK RATES</div>';
-        h += '<div class="dim" style="font-size:0.6rem;padding:2px 0">' + cbr.count + ' banks' + (cbr.fred_available ? ' (FRED live)' : ' (curated)') + '</div>';
+        h += '<div class="sh" data-sh="CENTRAL BANK RATES">CENTRAL BANK RATES</div>';
+        h += '<div class="dim" style="font-size:0.6rem;padding:2px 0">' + _t('{n} banks', {n: cbr.count}) + (cbr.fred_available ? ' (' + _t('FRED live') + ')' : ' (' + _t('curated') + ')') + '</div>';
         cbr.rates.forEach(function(r) {
             var rateCls = r.rate >= 10 ? 'crit' : r.rate >= 5 ? 'warn' : r.rate >= 2 ? 'bright' : 'good';
             h += '<div style="font-size:0.65rem;padding:1px 0">';
@@ -2923,23 +3189,23 @@ function updateDrawer(data) {
         var cf = data.cache_freshness;
         var sources = Object.entries(cf).sort(function(a,b) { return a[1].last_updated_s_ago - b[1].last_updated_s_ago; });
         var staleCount = sources.filter(function(s) { return s[1].is_stale; }).length;
-        h += '<div class="sh">DATA FRESHNESS</div>';
-        h += '<div class="dim" style="font-size:0.6rem;padding:2px 0">' + sources.length + ' sources tracked, ' + staleCount + ' stale</div>';
+        h += '<div class="sh" data-sh="DATA FRESHNESS">DATA FRESHNESS</div>';
+        h += '<div class="dim" style="font-size:0.6rem;padding:2px 0">' + _t('{n} sources tracked, {stale} stale', {n: sources.length, stale: staleCount}) + '</div>';
         sources.forEach(function(s) {
             var name = s[0], info = s[1];
             var ageMin = Math.round(info.last_updated_s_ago / 60);
             var cls = info.is_stale ? 'crit' : ageMin > 10 ? 'warn' : 'dim';
             var label = ageMin < 1 ? '<1m' : ageMin + 'm';
-            h += '<div style="font-size:0.65rem;padding:1px 0"><span class="bright">' + esc(name) + '</span> <span class="' + cls + '">' + label + (info.is_stale ? ' STALE' : '') + '</span></div>';
+            h += '<div style="font-size:0.65rem;padding:1px 0"><span class="bright">' + esc(name) + '</span> <span class="' + cls + '">' + label + (info.is_stale ? ' ' + _t('STALE') : '') + '</span></div>';
         });
     }
 
     // ── AI SITUATION BRIEF ──
     if (data.situation_brief && !data.situation_brief.error && data.situation_brief.brief) {
         var sb = data.situation_brief;
-        h += '<div class="sh">AI SITUATION BRIEF</div>';
+        h += '<div class="sh" data-sh="AI SITUATION BRIEF">AI SITUATION BRIEF</div>';
         var aiTag = sb.ai_generated ? '<span style="color:var(--purple);font-size:0.55rem;font-weight:600;letter-spacing:0.5px"> ' + esc(sb.model) + '</span>' : '<span class="dim" style="font-size:0.55rem"> metrics fallback</span>';
-        h += '<div style="font-size:0.6rem;padding:2px 0;opacity:0.5">Generated ' + ago(new Date(sb.timestamp).getTime()) + ' ago ' + aiTag + '</div>';
+        h += '<div style="font-size:0.6rem;padding:2px 0;opacity:0.5">' + _t('Generated {age} ago', {age: ago(new Date(sb.timestamp).getTime())}) + ' ' + aiTag + '</div>';
         h += '<div style="font-size:0.7rem;line-height:1.5;padding:4px 0;white-space:pre-wrap;color:rgba(255,255,255,0.85)">' + esc(sb.brief) + '</div>';
     }
 
@@ -2950,7 +3216,7 @@ function updateDrawer(data) {
         var _collapsed = JSON.parse(localStorage.getItem('phoenix-drawer-collapsed')) || [];
         if (_collapsed.length) {
             $$('#drawerBody .sh').forEach(function(s) {
-                if (_collapsed.indexOf(s.textContent.trim()) >= 0) {
+                if (_collapsed.indexOf(s.getAttribute('data-sh')) >= 0) {
                     s.classList.add('collapsed');
                     var next = s.nextElementSibling;
                     while (next && !next.classList.contains('sh')) { next.style.display = 'none'; next = next.nextElementSibling; }
@@ -2966,6 +3232,8 @@ function updateTicker(data) {
     if (!data.news_feed || data.news_feed.error) return;
     var articles = data.news_feed.articles || data.news_feed.items || [];
     if (!articles.length) return;
+    articles = _windowArticles(articles);
+    if (!articles.length) { $('#tickerContent').innerHTML = ''; return; }
     var items = articles.slice(0, 30).map(function(a) {
         return '<span class="ticker-item">' + esc(trunc(a.title || '?', 70)) + '<span class="src">' + esc(a.feed_name || a.source || a.feed || '') + '</span></span>';
     });
@@ -2990,9 +3258,7 @@ function updateAll(data) {
     _writeCacheEnvelope(DASHBOARD_CACHE_KEY, data);
 
     // Map layers (each wrapped to prevent cascade failures)
-    var conflictData = (data.acled_events && !data.acled_events.error && data.acled_events.count > 0) ? data.acled_events
-        : (data.ucdp_events && !data.ucdp_events.error && data.ucdp_events.count > 0) ? data.ucdp_events
-        : data.conflict_zones;
+    var conflictData = _conflictSource(data);
     var mapUpdates = [
         ['quakes', function() { updateMapQuakes(data.earthquakes); }],
         ['military', function() { updateMapMilitary(data.military_flights); }],
@@ -3028,7 +3294,7 @@ function updateAll(data) {
     // Feed health
     var feedKeys = Object.keys(data).filter(function(k) { return k !== 'source_health' && k !== 'cache_stats' && k !== 'timestamp'; });
     var okCount = feedKeys.filter(function(k) { return data[k] && !data[k].error; }).length;
-    $('#feedCount').textContent = okCount + '/' + feedKeys.length + ' feeds';
+    $('#feedCount').textContent = _t('{ok}/{total} feeds', {ok: okCount, total: feedKeys.length});
 
     if (data.timestamp) { $('#lastUpdate').textContent = new Date(data.timestamp).toLocaleTimeString(); }
 
@@ -3063,7 +3329,7 @@ function connectSSE() {
                 var loading = document.getElementById('loading');
                 if (loading && !loading.classList.contains('gone')) {
                     var label = loading.querySelector('.loading-label');
-                    if (label) label.textContent = 'LOADING FEEDS ' + data._done + '/' + data._total;
+                    if (label) label.textContent = _t('LOADING FEEDS {done}/{total}', {done: data._done, total: data._total});
                 }
                 // Hide spinner after first 3 sources arrive — show map immediately
                 if (data._done >= 3) {
@@ -3097,6 +3363,7 @@ function connectSSE() {
 
 // ════════════ BOOT ════════════
 initMap();
+_initFilters();
 
 // Restore saved layer visibility
 (function() {
@@ -3120,20 +3387,20 @@ $('#drawerBody').addEventListener('click', function(e) {
         var next = sh.nextElementSibling;
         while (next && !next.classList.contains('sh')) { next.style.display = hide ? 'none' : ''; next = next.nextElementSibling; }
         try {
-            var names = []; $$('#drawerBody .sh.collapsed').forEach(function(s) { names.push(s.textContent.trim()); });
+            // Key on data-sh (English msgid): the visible text is translated and
+            // differs between save time and the pre-translation redraw.
+            var names = []; $$('#drawerBody .sh.collapsed').forEach(function(s) { names.push(s.getAttribute('data-sh')); });
             localStorage.setItem('phoenix-drawer-collapsed', JSON.stringify(names));
         } catch(e2) {}
     }
 });
 
-// HUD pill click-to-zoom
-var HUD_LAYER_MAP = { 'Quakes': 'quakes', 'Aircraft': 'military', 'Conflict': 'conflict', 'Fires': 'fires', 'Exposed': 'exposure', 'Airborne': 'airtraffic', 'Traffic': 'traffic', 'Cams': 'webcams', 'Nuke Flag': 'nuclear', 'Climate': 'climate', 'News': 'news' };
+// HUD pill click-to-zoom (layer key comes from data-layer, not from the
+// label text, which the zh-TW translator rewrites)
 $('#hudStats').addEventListener('click', function(e) {
     var pill = e.target.closest('.stat-pill');
     if (!pill) return;
-    var label = pill.querySelector('.l');
-    if (!label) return;
-    var layerKey = HUD_LAYER_MAP[label.textContent.trim()];
+    var layerKey = pill.getAttribute('data-layer');
     if (!layerKey || !mapLayers[layerKey]) return;
     // Ensure layer is visible
     if (!layerState[layerKey]) {
@@ -3190,13 +3457,11 @@ function performSearch(q) {
             if (_matchText(it, q) && it[latK] != null && it[lonK] != null) coords.push([Number(it[latK]), Number(it[lonK])]);
         });
     }
-    _scan((latestData.earthquakes || {}).earthquakes, 'latitude', 'longitude');
+    _scan(_windowQuakes(latestData.earthquakes), 'latitude', 'longitude');
     _scan((latestData.military_flights || {}).aircraft, 'latitude', 'longitude');
-    var cSrc = (latestData.acled_events && !latestData.acled_events.error && (latestData.acled_events.count||0) > 0) ? latestData.acled_events
-        : (latestData.ucdp_events && !latestData.ucdp_events.error && (latestData.ucdp_events.count||0) > 0) ? latestData.ucdp_events
-        : latestData.conflict_zones;
-    _scan((cSrc || {}).events, 'latitude', 'longitude');
-    _scan((cSrc || {}).events, 'lat', 'lon');
+    var cEvents = _windowConflictEvents(_conflictSource(latestData));
+    _scan(cEvents, 'latitude', 'longitude');
+    _scan(cEvents, 'lat', 'lon');
     var fbr = (latestData.wildfires || {}).fires_by_region || {};
     for (var rk in fbr) { if (fbr.hasOwnProperty(rk)) { (fbr[rk].top_clusters || []).forEach(function(c) { if (rk.toLowerCase().indexOf(q) >= 0 && c.lat != null) coords.push([c.lat, c.lon]); }); } }
     _scan((latestData.signal_convergence || {}).hotspots, 'lat', 'lon');
@@ -3213,7 +3478,7 @@ function performSearch(q) {
     if (!Array.isArray(climZones) && typeof climZones === 'object') climZones = Object.values(climZones);
     _scan(climZones, 'lat', 'lon');
     // News articles with geolocation
-    var newsArticles = (latestData.news_feed || {}).articles || (latestData.news_feed || {}).items || [];
+    var newsArticles = _windowArticles((latestData.news_feed || {}).articles || (latestData.news_feed || {}).items);
     newsArticles.forEach(function(a) { if (a._geo_lat && _matchText(a, q)) coords.push([a._geo_lat, a._geo_lon]); });
     if (coords.length > 0) {
         map.fitBounds(L.latLngBounds(coords), { padding: [60, 60], maxZoom: coords.length === 1 ? 10 : 6 });
@@ -3229,7 +3494,7 @@ function performSearch(q) {
 function updateMapAois(data) {
     mapLayers.aoi.clearLayers();
     var cnt = $('#cntAoi');
-    if (!data || data.error) { cnt.textContent = '!'; cnt.title = (data && data.error) || 'AOI fetch failed'; return; }
+    if (!data || data.error) { cnt.textContent = '!'; cnt.title = (data && data.error) || _t('AOI fetch failed'); return; }
     var aois = data.aois || [];
     aois.forEach(function(a) {
         var opts = { color: '#ff7f50', weight: 2, opacity: 0.9, fillColor: '#ff7f50', fillOpacity: 0.08, className: 'aoi-shape' };
@@ -3243,7 +3508,7 @@ function updateMapAois(data) {
             shape = L.circle([a.lat, a.lon], Object.assign({ radius: (a.radius_km || 0) * 1000 }, opts));
         }
         var ls = a.last_sweep;
-        var sweep = ls ? ls.total + ' items, swept ' + ago(ls.taken_at * 1000) + ' ago' : 'never swept';
+        var sweep = ls ? _t('{n} items, swept {age} ago', {n: ls.total, age: ago(ls.taken_at * 1000)}) : _t('never swept');
         shape.bindTooltip(esc(a.name) + '<br><span style="opacity:0.7">' + esc(a.kind || 'circle') + ' • ' + esc(sweep) + '</span>', { className: 'mk-tip', sticky: true });
         shape.on('click', function() { showDetail('aoi', a); });
         shape.addTo(mapLayers.aoi);
@@ -3291,7 +3556,7 @@ function updateVectorPanel(vd) {
     var statusColor = status === 'green' ? 'var(--green)' : status === 'yellow' ? 'var(--amber)' : 'var(--dim)';
     $('#vecPointCount').innerHTML = safe(
         '<span class="v">' + fmtNum(pts) + '</span> pts ' +
-        '<span style="color:' + statusColor + '">' + esc(status) + '</span>'
+        '<span style="color:' + statusColor + '">' + esc(_t(status)) + '</span>'
     );
 
     var h = '';
@@ -3363,7 +3628,7 @@ function doVecSearch() {
                     h += '</div>';
                     h += '<div class="r-text">' + esc(trunc(r.text || '', 150)) + '</div>';
                     if (r.datetime) {
-                        h += '<div class="r-time">' + ago(new Date(r.datetime).getTime()) + ' ago</div>';
+                        h += '<div class="r-time">' + _t('{age} ago', {age: ago(new Date(r.datetime).getTime())}) + '</div>';
                     }
                     h += '</div>';
                 });
@@ -3372,7 +3637,7 @@ function doVecSearch() {
         $('#vecResults').innerHTML = safe(h);
     })
     .catch(function(e) {
-        $('#vecResults').innerHTML = safe('<div class="vec-unavail">Search failed: ' + esc(String(e)) + '</div>');
+        $('#vecResults').innerHTML = safe('<div class="vec-unavail">' + _t('Search failed: {err}', {err: esc(String(e))}) + '</div>');
     })
     .finally(function() {
         _vecSearching = false;

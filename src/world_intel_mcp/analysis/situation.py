@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 
 import httpx
 
+from ..i18n import get_locale, t
+
 logger = logging.getLogger("world-intel-mcp.analysis.situation")
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
@@ -114,7 +116,11 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
         n = _add_source(
             sources,
             "earthquakes",
-            f"M{top_quake.get('magnitude')} earthquake, {top_quake.get('place') or 'unknown location'}",
+            t(
+                "M{magnitude} earthquake, {place}",
+                magnitude=top_quake.get("magnitude"),
+                place=top_quake.get("place") or t("unknown location"),
+            ),
             url=top_quake.get("url"),
             timestamp=top_quake.get("time"),
         )
@@ -126,7 +132,7 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
         n = _add_source(
             sources,
             "military",
-            f"{mil_count} military aircraft currently tracked",
+            t("{count} military aircraft currently tracked", count=mil_count),
             timestamp=mil.get("timestamp"),
         )
         _cite(citations, "military_aircraft", n)
@@ -153,9 +159,9 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
                 top_event.get("location")
                 or top_event.get("admin1")
                 or top_event.get("country")
-                or "unspecified location"
+                or t("unspecified location")
             )
-            event_type = top_event.get("event_type") or "conflict event"
+            event_type = top_event.get("event_type") or t("conflict event")
             n = _add_source(
                 sources,
                 "conflict",
@@ -167,7 +173,11 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
             n = _add_source(
                 sources,
                 "conflict",
-                f"{conflict_count} conflict events tracked ({feed_label})",
+                t(
+                    "{count} conflict events tracked ({feed})",
+                    count=conflict_count,
+                    feed=feed_label,
+                ),
             )
             _cite(citations, "conflicts", n)
 
@@ -191,7 +201,11 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
             n = _add_source(
                 sources,
                 "wildfires",
-                f"{top_count} active fire clusters in {top_region}",
+                t(
+                    "{count} active fire clusters in {region}",
+                    count=top_count,
+                    region=top_region,
+                ),
             )
             _cite(citations, "fire_clusters", n)
 
@@ -201,12 +215,12 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
     if cyber_threats_list:
         top_threat = cyber_threats_list[0]
         threat_label = (
-            top_threat.get("threat") or top_threat.get("type") or "cyber threat"
+            top_threat.get("threat") or top_threat.get("type") or t("cyber threat")
         )
         indicator = top_threat.get("indicator") or ""
-        severity = top_threat.get("severity") or "unknown"
+        severity = top_threat.get("severity") or t("unknown")
         label = f"{threat_label}, {indicator}" if indicator else threat_label
-        desc = f"{label} ({severity} severity)"
+        desc = t("{label} ({severity} severity)", label=label, severity=severity)
         n = _add_source(
             sources,
             "cyber",
@@ -226,7 +240,11 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
         n = _add_source(
             sources,
             "posture",
-            f"Composite risk score {posture_score}/100 ({risk_level})",
+            t(
+                "Composite risk score {score}/100 ({level})",
+                score=posture_score,
+                level=risk_level,
+            ),
             timestamp=posture.get("timestamp"),
         )
         _cite(citations, "posture", n)
@@ -237,14 +255,19 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
         alert_items = alerts.get("alerts") or []
         if alert_items:
             top_alert = alert_items[0]
-            desc = top_alert.get("message") or f"{alert_count} active alerts"
+            desc = top_alert.get("message") or t(
+                "{count} active alerts", count=alert_count
+            )
             n = _add_source(sources, "alerts", desc, timestamp=alerts.get("timestamp"))
             _cite(citations, "alerts", n)
         elif alert_count:
             n = _add_source(
                 sources,
                 "alerts",
-                f"{alert_count} active alerts across monitored domains",
+                t(
+                    "{count} active alerts across monitored domains",
+                    count=alert_count,
+                ),
                 timestamp=alerts.get("timestamp"),
             )
             _cite(citations, "alerts", n)
@@ -255,7 +278,7 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
         n = _add_source(
             sources,
             "space_weather",
-            f"Kp index {round(kp, 1)}",
+            t("Kp index {kp}", kp=round(kp, 1)),
             timestamp=space.get("timestamp"),
         )
         _cite(citations, "kp_index", n)
@@ -273,7 +296,7 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
             n = _add_source(
                 sources,
                 "health",
-                top.get("title") or "disease outbreak alert",
+                top.get("title") or t("disease outbreak alert"),
                 url=top.get("link"),
                 timestamp=top.get("published"),
             )
@@ -304,7 +327,7 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
         n = _add_source(
             sources,
             "aviation",
-            f"{total_aircraft} aircraft airborne globally",
+            t("{count} aircraft airborne globally", count=total_aircraft),
             timestamp=domestic.get("timestamp"),
         )
         _cite(citations, "total_aircraft", n)
@@ -317,7 +340,7 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
         n = _add_source(
             sources,
             "traffic",
-            f"{avg_congestion}% average city congestion",
+            t("{avg}% average city congestion", avg=avg_congestion),
             timestamp=traffic.get("timestamp"),
         )
         _cite(citations, "avg_congestion", n)
@@ -341,6 +364,16 @@ def _extract_metrics(data: dict) -> tuple[dict, list[dict], dict[str, list[int]]
     return metrics, sources, citations
 
 
+def _language_rule() -> str:
+    """Extra instruction appended to the LLM prompt for non-English output."""
+    if get_locale() == "zh-TW":
+        return (
+            "\nWrite the entire brief in Traditional Chinese as used in Taiwan "
+            "(zh-TW). Keep citation markers exactly as [n]."
+        )
+    return ""
+
+
 def _build_prompt(m: dict, sources: list[dict]) -> str:
     """Build an LLM prompt from extracted metrics and the source list."""
     headline_block = (
@@ -354,7 +387,7 @@ def _build_prompt(m: dict, sources: list[dict]) -> str:
         else "  (no numbered sources available, do not invent citation numbers)"
     )
 
-    return f"""You are a senior intelligence analyst. Generate a concise 3-paragraph situational awareness brief based on these real-time metrics:
+    prompt = f"""You are a senior intelligence analyst. Generate a concise 3-paragraph situational awareness brief based on these real-time metrics:
 
 THREAT POSTURE: Score {m["posture_score"]}/100 ({m["risk_level"]}), {m["alerts"]} active alerts
 MILITARY: {m["military_aircraft"]} tracked aircraft
@@ -379,6 +412,7 @@ Write exactly 3 paragraphs:
 3. Recommended watch items for the next 12 hours
 
 Be specific, cite numbers. Cite every factual claim inline as [n] referencing the source list above. No preamble."""
+    return prompt + _language_rule()
 
 
 def _fallback_brief(m: dict, citations: dict[str, list[int]]) -> str:
@@ -386,16 +420,39 @@ def _fallback_brief(m: dict, citations: dict[str, list[int]]) -> str:
     each line is assembled per-metric, so it carries exactly the
     citations backing the numbers on that line, no more and no less."""
     lines = [
-        f"THREAT POSTURE: {m['risk_level'].upper()} (score {m['posture_score']}/100) with {m['alerts']} active alerts."
-        f"{_citation_suffix(citations, 'posture', 'alerts')}",
-        f"MILITARY: {m['military_aircraft']} aircraft tracked. CONFLICT: {m['conflicts']} active events."
-        f"{_citation_suffix(citations, 'military_aircraft', 'conflicts')}",
-        f"SEISMIC: {m['earthquakes']} earthquakes (max M{m['max_magnitude']}). FIRES: {m['fire_clusters']} clusters."
-        f"{_citation_suffix(citations, 'earthquakes', 'fire_clusters')}",
-        f"CYBER: {m['cyber_threats']} IOCs. HEALTH: {m['outbreaks']} high-concern outbreaks."
-        f"{_citation_suffix(citations, 'cyber_threats', 'outbreaks')}",
-        f"SPACE: Kp {m['kp_index']}. AIR TRAFFIC: {m['total_aircraft']} airborne. CONGESTION: {m['avg_congestion']}%."
-        f"{_citation_suffix(citations, 'kp_index', 'total_aircraft', 'avg_congestion')}",
+        t(
+            "THREAT POSTURE: {risk} (score {score}/100) with {alerts} active alerts.",
+            risk=m["risk_level"].upper(),
+            score=m["posture_score"],
+            alerts=m["alerts"],
+        )
+        + _citation_suffix(citations, "posture", "alerts"),
+        t(
+            "MILITARY: {aircraft} aircraft tracked. CONFLICT: {conflicts} active events.",
+            aircraft=m["military_aircraft"],
+            conflicts=m["conflicts"],
+        )
+        + _citation_suffix(citations, "military_aircraft", "conflicts"),
+        t(
+            "SEISMIC: {quakes} earthquakes (max M{magnitude}). FIRES: {fires} clusters.",
+            quakes=m["earthquakes"],
+            magnitude=m["max_magnitude"],
+            fires=m["fire_clusters"],
+        )
+        + _citation_suffix(citations, "earthquakes", "fire_clusters"),
+        t(
+            "CYBER: {iocs} IOCs. HEALTH: {outbreaks} high-concern outbreaks.",
+            iocs=m["cyber_threats"],
+            outbreaks=m["outbreaks"],
+        )
+        + _citation_suffix(citations, "cyber_threats", "outbreaks"),
+        t(
+            "SPACE: Kp {kp}. AIR TRAFFIC: {aircraft} airborne. CONGESTION: {congestion}%.",
+            kp=m["kp_index"],
+            aircraft=m["total_aircraft"],
+            congestion=m["avg_congestion"],
+        )
+        + _citation_suffix(citations, "kp_index", "total_aircraft", "avg_congestion"),
     ]
     return "\n".join(lines)
 

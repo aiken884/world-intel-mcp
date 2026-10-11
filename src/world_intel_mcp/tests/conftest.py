@@ -1,6 +1,7 @@
 """Test configuration — strips proxy env vars so httpx doesn't try SOCKS."""
 
 import asyncio
+import os
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,20 @@ _PROXY_VARS = [
     "GRPC_PROXY",
     "grpc_proxy",
 ]
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Pin English before any test module imports world_intel_mcp.cli.
+
+    Click help is localized at import time, and the default locale is zh-TW.
+    """
+    os.environ["WORLD_INTEL_LANG"] = "en"
+
+
+@pytest.fixture(autouse=True)
+def _pin_english_locale(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Existing assertions are English; zh-TW tests opt in via setenv."""
+    monkeypatch.setenv("WORLD_INTEL_LANG", "en")
 
 
 @pytest.fixture(autouse=True)

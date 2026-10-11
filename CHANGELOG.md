@@ -1,5 +1,61 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- zh-TW locale, now the default. Set `WORLD_INTEL_LANG=en` or pass
+  `world-intel --lang en` to switch back to English. Covers the `intel`
+  CLI, the dashboard, and the fixed text of reports, daily digests, and
+  situation briefs. External API data, MCP tool names and descriptions,
+  and JSON keys are not translated.
+- `world-intel` single entry point with `mcp`, `cli`, `dashboard`, and
+  `collector` subcommands. `--lang` must come before the subcommand.
+- `scripts/build-macos.sh`: PyInstaller onedir build producing
+  `dist/world-intel/world-intel` (Apple Silicon arm64). The executable is
+  unsigned and not notarized.
+- macOS app: `scripts/build-macos-app.sh` builds `dist/World Intel.app` (the
+  dashboard in a native WKWebView window; closing the window quits) and
+  `scripts/make-dmg.sh` packs it into `dist/World-Intel-<version>-arm64.dmg`
+  (drag-to-Applications). New optional extra `gui` (`pywebview`); entry point
+  `world_intel_mcp.gui_app`. Ad-hoc signed, not notarized. Acceptance:
+  `scripts/verify-macos-app.py`. `scripts/build-macos.sh` now only replaces
+  `dist/world-intel/` instead of wiping all of `dist/`.
+
+### Changed
+- `WORLD_INTEL_LANG` resolution now follows the usual `LANG` conventions, and
+  `world-intel --lang` reports an unsupported value with a clear error
+  message.
+- AOI briefs and digests, and Click's built-in plural messages, are now
+  translated to zh-TW.
+- `scripts/verify-macos-build.py --expected-tools` documents how to generate
+  the tool-name list; the README's macOS acceptance section shows the
+  one-line command.
+
+### Fixed
+- Dashboard REGION and TIME WINDOW buttons did nothing (upstream never wired
+  them). Region buttons now fit the map to Americas / Europe / MENA /
+  Asia-Pacific / Africa, or back to the globe. Time-window buttons (1h / 6h /
+  24h / 7d / All) now filter earthquakes, news (map, ticker) and conflict
+  events, and redraw from the loaded data without refetching; live flights
+  and static layers are not filtered. Both choices persist in localStorage.
+  Behaviour change: the window was hard-coded to 7 days while the UI showed
+  24h as active, so the default 24h now really means 24 hours (pick 7d for the
+  old view). Date-only conflict dates count as the end of that UTC day.
+- Dashboard basemap: CARTO `dark_all` tiles now answer every request with an
+  "API KEY REQUIRED" watermark tile, so the map is switched to OpenStreetMap
+  standard tiles (no key; attribution shown; darkened with a CSS filter).
+  Basemap links open in the system browser from the native app window.
+- Dashboard HUD stat pills for quakes, nuclear, exposure, traffic and
+  webcams now zoom the map on click; those layers were `L.layerGroup()`
+  (no `getBounds()`) and the failure was swallowed silently. They are now
+  `L.featureGroup()`.
+- Acceptance-script hygiene: `verify-macos-build.py` sends child stderr to
+  files and prints the tail on failure, fails fast when the dashboard
+  process exits early, keeps HOME and cwd in one temp directory removed
+  only after the children are waited on, and no longer waits out the full
+  MCP timeout when the process has already exited; `verify-macos-app.py`
+  no longer risks stalling on an unread output pipe.
+
 ## 0.10.0 - 2026-09-02
 
 Geofences become visible and their news becomes geographic: the

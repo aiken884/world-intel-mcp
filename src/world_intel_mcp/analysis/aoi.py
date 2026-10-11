@@ -41,6 +41,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..i18n import t
 from .escalation import score_hotspot
 from .situation import _add_source, _cite, _has_valid_citation
 
@@ -1066,15 +1067,55 @@ def nearby_infrastructure(
     }
 
 
-_INFRA_LABELS = {
-    "military_bases": "Military Bases",
-    "ports": "Ports",
-    "pipelines": "Pipelines",
-    "nuclear_facilities": "Nuclear Facilities",
-    "undersea_cables": "Undersea Cables",
-    "datacenters": "Datacenters",
-    "spaceports": "Spaceports",
-}
+def _infra_labels() -> dict[str, str]:
+    """Translated section titles for the static-infrastructure categories.
+
+    Built per call with literal ``t()`` msgids: a module-level dict would
+    freeze the import-time locale and hide the msgids from the catalog test.
+    """
+    return {
+        "military_bases": t("Military Bases"),
+        "ports": t("Ports"),
+        "pipelines": t("Pipelines"),
+        "nuclear_facilities": t("Nuclear Facilities"),
+        "undersea_cables": t("Undersea Cables"),
+        "datacenters": t("Datacenters"),
+        "spaceports": t("Spaceports"),
+    }
+
+
+def _domain_label(domain: str) -> str:
+    """Translated label of a scoped domain, for data-gap sentences."""
+    return {
+        "earthquakes": t("Earthquakes"),
+        "military_flights": t("Military flights"),
+        "conflict_events": t("Conflict events"),
+        "wildfires": t("Wildfires"),
+        "aviation": t("Aviation"),
+        "news": t("News"),
+    }.get(domain, domain)
+
+
+def _kind_label(kind: str) -> str:
+    return {
+        "circle": t("circle"),
+        "polygon": t("polygon"),
+        "corridor": t("corridor"),
+    }.get(kind, kind)
+
+
+def _gap(domain: str, reason: Any) -> str:
+    """``"<Domain>: <reason>"`` data-gap line. ``reason`` is remote text and
+    only ever passed as a format argument, never as part of a msgid."""
+    return t("{label}: {reason}", label=_domain_label(domain), reason=reason)
+
+
+def _partial_gap(domain: str, partial: Any) -> str:
+    return t(
+        "{label}: partial coverage: {partial}",
+        label=_domain_label(domain),
+        partial=partial,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1220,7 +1261,9 @@ async def _aoi_news_query(fetcher, aoi_row: dict) -> tuple[str, dict]:
         return aoi_name, {
             "basis": "aoi_name",
             "query": aoi_name,
-            "reason": f"Reverse geocoding failed: {place_ctx['error']}",
+            "reason": t(
+                "Reverse geocoding failed: {error}", error=place_ctx["error"]
+            ),
         }
 
     terms = place_ctx.get("terms") or [] if isinstance(place_ctx, dict) else []
@@ -1231,7 +1274,7 @@ async def _aoi_news_query(fetcher, aoi_row: dict) -> tuple[str, dict]:
             "reason": (
                 place_ctx.get("note")
                 if isinstance(place_ctx, dict) and place_ctx.get("note")
-                else "No named place at these coordinates."
+                else t("No named place at these coordinates.")
             ),
         }
 
@@ -1357,6 +1400,11 @@ async def fetch_aoi_brief(fetcher, store: AOIStore, name: Any) -> dict:
 
     scoped = await _gather_scoped_domains(fetcher, aoi)
 
+    # i18n: the fixed text of the markdown and of ``data_gaps`` goes through
+    # t(); the ``[n]`` citation markers stay outside every msgid. The
+    # ``sources[].description`` strings are deliberately NOT translated: they
+    # interleave remote data (places, callsigns, headlines) and are the
+    # machine-readable citation record, identical in every locale.
     sources: list[dict] = []
     citations: dict[str, list[int]] = {}
     data_gaps: list[str] = []
@@ -1368,7 +1416,7 @@ async def fetch_aoi_brief(fetcher, store: AOIStore, name: Any) -> dict:
 
     # Earthquakes ------------------------------------------------------
     if scoped["earthquakes"].get("error"):
-        data_gaps.append(f"Earthquakes: {scoped['earthquakes']['error']}")
+        data_gaps.append(_gap("earthquakes", scoped["earthquakes"]["error"]))
         counts["earthquakes"] = 0
     else:
         eq_in_range = scoped["earthquakes"]["items"]
@@ -1385,17 +1433,23 @@ async def fetch_aoi_brief(fetcher, store: AOIStore, name: Any) -> dict:
             _cite(citations, "earthquakes", n)
             _line(
                 "earthquakes",
-                f"- [{n}] M{eq.get('magnitude')} {eq.get('place')} ({eq['distance_km']} km)",
+                f"- [{n}] "
+                + t(
+                    "M{magnitude} {place} ({distance} km)",
+                    magnitude=eq.get("magnitude"),
+                    place=eq.get("place"),
+                    distance=eq["distance_km"],
+                ),
             )
 
     # Military flights ---------------------------------------------------
     if scoped["military_flights"].get("error"):
-        data_gaps.append(f"Military flights: {scoped['military_flights']['error']}")
+        data_gaps.append(_gap("military_flights", scoped["military_flights"]["error"]))
         counts["military_flights"] = 0
     else:
         mil_in_range = scoped["military_flights"]["items"]
         for partial in scoped["military_flights"].get("partial_errors", []):
-            data_gaps.append(f"Military flights: partial coverage: {partial}")
+            data_gaps.append(_partial_gap("military_flights", partial))
         counts["military_flights"] = len(mil_in_range)
         if mil_in_range:
             n = _add_source(
@@ -1407,13 +1461,18 @@ async def fetch_aoi_brief(fetcher, store: AOIStore, name: Any) -> dict:
             for ac in mil_in_range[:10]:
                 _line(
                     "military_flights",
-                    f"- [{n}] {ac.get('callsign') or ac.get('icao24')} "
-                    f"({ac.get('origin_country') or 'unknown origin'}, {ac['distance_km']} km)",
+                    f"- [{n}] "
+                    + t(
+                        "{callsign} ({origin}, {distance} km)",
+                        callsign=ac.get("callsign") or ac.get("icao24"),
+                        origin=ac.get("origin_country") or t("unknown origin"),
+                        distance=ac["distance_km"],
+                    ),
                 )
 
     # Conflict (ACLED) ----------------------------------------------------
     if scoped["conflict_events"].get("error"):
-        data_gaps.append(f"Conflict events: {scoped['conflict_events']['error']}")
+        data_gaps.append(_gap("conflict_events", scoped["conflict_events"]["error"]))
         counts["conflict_events"] = 0
     else:
         conflict_in_range = scoped["conflict_events"]["items"]
@@ -1423,7 +1482,7 @@ async def fetch_aoi_brief(fetcher, store: AOIStore, name: Any) -> dict:
                 ev.get("location")
                 or ev.get("admin1")
                 or ev.get("country")
-                or "unspecified location"
+                or t("unspecified location")
             )
             n = _add_source(
                 sources,
@@ -1435,12 +1494,18 @@ async def fetch_aoi_brief(fetcher, store: AOIStore, name: Any) -> dict:
             _cite(citations, "conflict_events", n)
             _line(
                 "conflict_events",
-                f"- [{n}] {ev.get('event_type')}, {loc} ({ev['distance_km']} km)",
+                f"- [{n}] "
+                + t(
+                    "{event_type}, {loc} ({distance} km)",
+                    event_type=ev.get("event_type"),
+                    loc=loc,
+                    distance=ev["distance_km"],
+                ),
             )
 
     # Wildfires ------------------------------------------------------------
     if scoped["wildfires"].get("error"):
-        data_gaps.append(f"Wildfires: {scoped['wildfires']['error']}")
+        data_gaps.append(_gap("wildfires", scoped["wildfires"]["error"]))
         counts["wildfires"] = 0
     else:
         fire_in_range = scoped["wildfires"]["items"]
@@ -1454,12 +1519,18 @@ async def fetch_aoi_brief(fetcher, store: AOIStore, name: Any) -> dict:
             _cite(citations, "wildfires", n)
             _line(
                 "wildfires",
-                f"- [{n}] {fc.get('fire_count')} detections, max FRP {fc.get('max_frp')} ({fc['distance_km']} km)",
+                f"- [{n}] "
+                + t(
+                    "{count} detections, max FRP {frp} ({distance} km)",
+                    count=fc.get("fire_count"),
+                    frp=fc.get("max_frp"),
+                    distance=fc["distance_km"],
+                ),
             )
 
     # Aviation (sampled) ---------------------------------------------------
     if scoped["aviation"].get("error"):
-        data_gaps.append(f"Aviation: {scoped['aviation']['error']}")
+        data_gaps.append(_gap("aviation", scoped["aviation"]["error"]))
         counts["aviation"] = 0
     else:
         aviation_in_range = scoped["aviation"]["items"]
@@ -1474,19 +1545,25 @@ async def fetch_aoi_brief(fetcher, store: AOIStore, name: Any) -> dict:
             _cite(citations, "aviation", n)
             _line(
                 "aviation",
-                f"- [{n}] {len(aviation_in_range)} sampled aircraft observed",
+                f"- [{n}] "
+                + t(
+                    "{count} sampled aircraft observed",
+                    count=len(aviation_in_range),
+                ),
             )
 
     # News (scoped to the place the AOI sits in) ---------------------------
     news_scoping = scoped["news"].get("scoping") or {}
     if news_scoping.get("basis") == "aoi_name":
         data_gaps.append(
-            "News is scoped by the AOI's name, not its location "
-            f"({news_scoping.get('reason', 'reverse geocoding unavailable')}); "
-            "articles may be unrelated to the area."
+            t(
+                "News is scoped by the AOI's name, not its location ({reason}); "
+                "articles may be unrelated to the area.",
+                reason=news_scoping.get("reason", t("reverse geocoding unavailable")),
+            )
         )
     if scoped["news"].get("error"):
-        data_gaps.append(f"News: {scoped['news']['error']}")
+        data_gaps.append(_gap("news", scoped["news"]["error"]))
         counts["news"] = 0
         articles: list = []
     else:
@@ -1500,7 +1577,15 @@ async def fetch_aoi_brief(fetcher, store: AOIStore, name: Any) -> dict:
             sources, "news", title, url=art.get("url"), timestamp=art.get("seendate")
         )
         _cite(citations, "news", n)
-        _line("news", f"- [{n}] {title} ({art.get('domain') or 'unknown source'})")
+        _line(
+            "news",
+            f"- [{n}] "
+            + t(
+                "{title} ({domain})",
+                title=title,
+                domain=art.get("domain") or t("unknown source"),
+            ),
+        )
 
     # Nearby static infrastructure -------------------------------------
     # Candidates come from the bounding circle; for polygon/corridor AOIs
@@ -1522,8 +1607,11 @@ async def fetch_aoi_brief(fetcher, store: AOIStore, name: Any) -> dict:
             ]
         if infra["pipelines"] or infra["undersea_cables"]:
             data_gaps.append(
-                f"Pipelines/undersea cables: matched against the bounding "
-                f"circle, not the exact {aoi_kind} shape."
+                t(
+                    "Pipelines/undersea cables: matched against the bounding "
+                    "circle, not the exact {kind} shape.",
+                    kind=_kind_label(aoi_kind),
+                )
             )
     for category, items in infra.items():
         counts[category] = len(items)
@@ -1534,45 +1622,68 @@ async def fetch_aoi_brief(fetcher, store: AOIStore, name: Any) -> dict:
                 f"{item['name']} ({item['distance_km']} km from {aoi_name})",
             )
             _cite(citations, category, n)
-            _line(category, f"- [{n}] {item['name']} ({item['distance_km']} km)")
+            _line(
+                category,
+                f"- [{n}] "
+                + t(
+                    "{name} ({distance} km)",
+                    name=item["name"],
+                    distance=item["distance_km"],
+                ),
+            )
 
     # --- Markdown ---------------------------------------------------------
     if aoi_kind == "polygon":
-        shape_line = (
-            f"Polygon: {len(aoi['geometry']['vertices'])} vertices "
-            f"(bounding center {lat:.4f}, {lon:.4f}; radius {radius_km:.0f} km)"
+        shape_line = t(
+            "Polygon: {n} vertices (bounding center {lat:.4f}, {lon:.4f}; "
+            "radius {radius:.0f} km)",
+            n=len(aoi["geometry"]["vertices"]),
+            lat=lat,
+            lon=lon,
+            radius=radius_km,
         )
     elif aoi_kind == "corridor":
         geometry = aoi["geometry"]
-        shape_line = (
-            f"Corridor: {len(geometry['waypoints'])} waypoints, width "
-            f"{geometry['width_km']:.0f} km (bounding center {lat:.4f}, "
-            f"{lon:.4f}; radius {radius_km:.0f} km)"
+        shape_line = t(
+            "Corridor: {n} waypoints, width {width:.0f} km (bounding center "
+            "{lat:.4f}, {lon:.4f}; radius {radius:.0f} km)",
+            n=len(geometry["waypoints"]),
+            width=geometry["width_km"],
+            lat=lat,
+            lon=lon,
+            radius=radius_km,
         )
     else:
-        shape_line = f"Center: {lat}, {lon} (radius {radius_km} km)"
+        shape_line = t(
+            "Center: {lat}, {lon} (radius {radius} km)",
+            lat=lat,
+            lon=lon,
+            radius=radius_km,
+        )
     md_parts = [
-        f"# AOI Brief: {aoi_name}",
+        t("# AOI Brief: {name}", name=aoi_name),
         shape_line,
         "",
     ]
     section_order = [
-        ("earthquakes", "Earthquakes"),
-        ("military_flights", "Military Flights"),
-        ("conflict_events", "Conflict Events (ACLED)"),
-        ("wildfires", "Wildfires"),
-        ("aviation", "Aviation (sampled)"),
-        ("news", "News Headline Mentions"),
-        *[(k, v) for k, v in _INFRA_LABELS.items()],
+        ("earthquakes", t("Earthquakes")),
+        ("military_flights", t("Military Flights")),
+        ("conflict_events", t("Conflict Events (ACLED)")),
+        ("wildfires", t("Wildfires")),
+        ("aviation", t("Aviation (sampled)")),
+        ("news", t("News Headline Mentions")),
+        *_infra_labels().items(),
     ]
     for domain, label in section_order:
         lines = sections.get(domain)
         md_parts.append(f"## {label}")
-        md_parts.append("\n".join(lines) if lines else "_None observed in range._")
+        md_parts.append(
+            "\n".join(lines) if lines else t("_None observed in range._")
+        )
         md_parts.append("")
 
     if data_gaps:
-        md_parts.append("## Data Gaps")
+        md_parts.append(t("## Data Gaps"))
         md_parts.extend(f"- {gap}" for gap in data_gaps)
 
     markdown = "\n".join(md_parts)
@@ -1632,7 +1743,7 @@ async def fetch_aoi_escalation(fetcher, store: AOIStore, name: Any) -> dict:
     data_gaps: list[str] = []
     conflict_count = fatalities = protests = 0
     if isinstance(acled_result, dict) and acled_result.get("error"):
-        data_gaps.append(f"Conflict events: {acled_result['error']}")
+        data_gaps.append(_gap("conflict_events", acled_result["error"]))
     else:
         events = filter_by_aoi(
             acled_result.get("events", []) if isinstance(acled_result, dict) else [],
@@ -1649,12 +1760,12 @@ async def fetch_aoi_escalation(fetcher, store: AOIStore, name: Any) -> dict:
 
     military_count = 0
     if isinstance(mil_result, dict) and mil_result.get("error"):
-        data_gaps.append(f"Military flights: {mil_result['error']}")
+        data_gaps.append(_gap("military_flights", mil_result["error"]))
     else:
         for partial in (
             mil_result.get("partial_errors", []) if isinstance(mil_result, dict) else []
         ):
-            data_gaps.append(f"Military flights: partial coverage: {partial}")
+            data_gaps.append(_partial_gap("military_flights", partial))
         aircraft = filter_by_aoi(
             mil_result.get("aircraft", []) if isinstance(mil_result, dict) else [],
             aoi,
@@ -1704,44 +1815,61 @@ async def fetch_aoi_escalation(fetcher, store: AOIStore, name: Any) -> dict:
 # sample is pure churn between sweeps, and diffing it would manufacture
 # fake enter/leave events every run. Static infrastructure is absent
 # because it cannot change between sweeps.
+#
+# The key functions build identifiers and must stay language-independent
+# (they are compared against stored snapshots). The summary functions build
+# display text and call t() at *call* time, never at import time; the data
+# they interpolate is passed as format arguments so braces or markup inside
+# remote strings stay literal. A stored summary keeps the language it was
+# written in, which only affects how a DEPARTED line reads after a switch.
 _CHANGE_DOMAINS: dict[str, tuple[Any, Any]] = {
     "earthquakes": (
         lambda i: str(
             i.get("id")
             or f"eq:{i.get('magnitude')}@{i.get('latitude')},{i.get('longitude')}"
         ),
-        lambda i: f"M{i.get('magnitude')} {i.get('place') or 'unknown location'} "
-        f"({i.get('distance_km')} km)",
+        lambda i: t(
+            "M{magnitude} {place} ({distance} km)",
+            magnitude=i.get("magnitude"),
+            place=i.get("place") or t("unknown location"),
+            distance=i.get("distance_km"),
+        ),
     ),
     "military_flights": (
         lambda i: str(i.get("icao24") or i.get("callsign") or "unknown"),
-        lambda i: f"{i.get('callsign') or i.get('icao24')} "
-        f"({i.get('origin_country') or 'unknown origin'}, {i.get('distance_km')} km)",
+        lambda i: t(
+            "{callsign} ({origin}, {distance} km)",
+            callsign=i.get("callsign") or i.get("icao24"),
+            origin=i.get("origin_country") or t("unknown origin"),
+            distance=i.get("distance_km"),
+        ),
     ),
     "conflict_events": (
         lambda i: f"{i.get('event_date')}|{i.get('event_type')}|"
         f"{i.get('location') or i.get('admin1') or i.get('country')}",
-        lambda i: f"{i.get('event_type') or 'conflict event'}, "
-        f"{i.get('location') or i.get('admin1') or i.get('country') or 'unspecified'} "
-        f"({i.get('distance_km')} km)",
+        lambda i: t(
+            "{event_type}, {loc} ({distance} km)",
+            event_type=i.get("event_type") or t("conflict event"),
+            loc=i.get("location")
+            or i.get("admin1")
+            or i.get("country")
+            or t("unspecified"),
+            distance=i.get("distance_km"),
+        ),
     ),
     "wildfires": (
         lambda i: f"fire:{round(float(i.get('lat', 0.0)), 2)},"
         f"{round(float(i.get('lon', 0.0)), 2)}",
-        lambda i: f"{i.get('fire_count')} fire detections ({i.get('distance_km')} km)",
+        lambda i: t(
+            "{count} fire detections ({distance} km)",
+            count=i.get("fire_count"),
+            distance=i.get("distance_km"),
+        ),
     ),
     "news": (
         lambda i: str(i.get("url") or i.get("title") or "untitled"),
-        lambda i: str(i.get("title") or i.get("url") or "untitled"),
+        lambda i: str(i.get("title") or i.get("url") or t("untitled")),
     ),
-}
-
-_CHANGE_GAP_LABELS = {
-    "earthquakes": "Earthquakes",
-    "military_flights": "Military flights",
-    "conflict_events": "Conflict events",
-    "wildfires": "Wildfires",
-    "news": "News",
 }
 
 
@@ -1782,15 +1910,14 @@ async def fetch_aoi_changes(fetcher, store: AOIStore, name: Any) -> dict:
 
     for domain, (key_fn, summary_fn) in _CHANGE_DOMAINS.items():
         result = scoped.get(domain, {})
-        label = _CHANGE_GAP_LABELS[domain]
         if result.get("error"):
-            data_gaps.append(f"{label}: {result['error']}")
+            data_gaps.append(_gap(domain, result["error"]))
             # Keep the last real observation for the next successful diff.
             if domain in prev_domains:
                 next_domains[domain] = prev_domains[domain]
             continue
         for partial in result.get("partial_errors", []):
-            data_gaps.append(f"{label}: partial coverage: {partial}")
+            data_gaps.append(_partial_gap(domain, partial))
 
         current: dict[str, str] = {}
         for item in result.get("items", []):
@@ -1903,13 +2030,17 @@ async def fetch_aoi_digest(fetcher, store: AOIStore, names: Any = None) -> dict:
 
     entries: list[dict] = []
     total_new = total_departed = 0
-    md_parts = ["# AOI Digest", ""]
+    md_parts = [t("# AOI Digest"), ""]
     for row, result in zip(selected, results):
         if "error" in result and "changes" not in result:
             # A per-AOI hard failure (e.g. deleted concurrently): keep
             # it visible without sinking the whole digest.
             entries.append({"name": row["name"], "error": result["error"]})
-            md_parts += [f"## {row['name']}", f"_Error: {result['error']}_", ""]
+            md_parts += [
+                f"## {row['name']}",
+                t("_Error: {error}_", error=result["error"]),
+                "",
+            ]
             continue
         new_count = sum(len(c["new"]) for c in result["changes"].values())
         departed_count = sum(len(c["departed"]) for c in result["changes"].values())
@@ -1925,21 +2056,40 @@ async def fetch_aoi_digest(fetcher, store: AOIStore, names: Any = None) -> dict:
                 "data_gaps": result["data_gaps"],
             }
         )
-        md_parts.append(f"## {result['aoi']['name']} ({result['aoi']['kind']})")
+        md_parts.append(
+            t(
+                "## {name} ({kind})",
+                name=result["aoi"]["name"],
+                kind=_kind_label(result["aoi"]["kind"]),
+            )
+        )
         if result["baseline"]:
             md_parts.append(
-                "_Baseline established; changes will report from the next sweep._"
+                t("_Baseline established; changes will report from the next sweep._")
             )
         elif new_count == 0 and departed_count == 0:
-            md_parts.append("_No changes since the last sweep._")
+            md_parts.append(t("_No changes since the last sweep._"))
         else:
+            # ``[domain]`` is the stable machine key, not display text.
             for domain, change in result["changes"].items():
                 for item in change["new"]:
-                    md_parts.append(f"- NEW [{domain}] {item['summary']}")
+                    md_parts.append(
+                        t(
+                            "- NEW [{domain}] {summary}",
+                            domain=domain,
+                            summary=item["summary"],
+                        )
+                    )
                 for item in change["departed"]:
-                    md_parts.append(f"- DEPARTED [{domain}] {item['summary']}")
+                    md_parts.append(
+                        t(
+                            "- DEPARTED [{domain}] {summary}",
+                            domain=domain,
+                            summary=item["summary"],
+                        )
+                    )
         for gap in result["data_gaps"]:
-            md_parts.append(f"- data gap: {gap}")
+            md_parts.append(t("- data gap: {gap}", gap=gap))
         md_parts.append("")
 
     return {

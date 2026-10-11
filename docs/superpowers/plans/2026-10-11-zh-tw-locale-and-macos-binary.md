@@ -75,10 +75,9 @@ Expected: 全綠；記下總測試數與覆蓋率（之後不得下降）。若�
 - [ ] **Step 3: 記下工具名稱基準（Task 7 驗收用）**
 
 ```bash
-mkdir -p /private/tmp/claude-501/-Users-aikenlin-Projects-world-intel-mcp/1aa50ba1-9c0b-4e5b-938e-30db8aa54696/scratchpad
 .venv/bin/python -c "import json; from world_intel_mcp.tools import ALL_TOOLS; print(json.dumps(sorted(t.name for t in ALL_TOOLS)))" \
-  > /private/tmp/claude-501/-Users-aikenlin-Projects-world-intel-mcp/1aa50ba1-9c0b-4e5b-938e-30db8aa54696/scratchpad/expected-tools.json
-.venv/bin/python -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" /private/tmp/claude-501/-Users-aikenlin-Projects-world-intel-mcp/1aa50ba1-9c0b-4e5b-938e-30db8aa54696/scratchpad/expected-tools.json
+  > /tmp/expected-tools.json
+.venv/bin/python -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" /tmp/expected-tools.json
 ```
 Expected: 印出工具數（預期 132）。
 
@@ -1499,7 +1498,7 @@ Expected：`Built: .../dist/world-intel/world-intel`，`file` 顯示 Mach-O 64-b
 ```bash
 cd /Users/aikenlin/Projects/world-intel-mcp && python3 -I scripts/verify-macos-build.py \
   --exe dist/world-intel/world-intel \
-  --expected-tools /private/tmp/claude-501/-Users-aikenlin-Projects-world-intel-mcp/1aa50ba1-9c0b-4e5b-938e-30db8aa54696/scratchpad/expected-tools.json
+  --expected-tools /tmp/expected-tools.json
 ```
 Expected：全部 `PASS`、`0 failure(s)`。任何 FAIL 都要查根因修正後重建，不得改驗收條件遷就。
 
@@ -1533,7 +1532,7 @@ Expected：繁體中文的表格欄名；若網路來源暫時失敗，應顯示
 cd /Users/aikenlin/Projects/world-intel-mcp
 .venv/bin/python -m pytest -m "not smoke" --cov=world_intel_mcp --cov-fail-under=89 -q 2>&1 | tail -8
 .venv/bin/python -m compileall -q src && echo compile-ok
-python3 -I scripts/verify-macos-build.py --exe dist/world-intel/world-intel --expected-tools /private/tmp/claude-501/-Users-aikenlin-Projects-world-intel-mcp/1aa50ba1-9c0b-4e5b-938e-30db8aa54696/scratchpad/expected-tools.json | tail -4
+python3 -I scripts/verify-macos-build.py --exe dist/world-intel/world-intel --expected-tools /tmp/expected-tools.json | tail -4
 git status --short | head
 ```
 Expected：測試全綠且覆蓋率達標；`compile-ok`；驗收 0 failure；工作樹乾淨（僅有預期的未追蹤忽略項）。
