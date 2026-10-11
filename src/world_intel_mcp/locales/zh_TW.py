@@ -165,6 +165,21 @@ CLICK: dict[str, str] = {
     'Cited brief for a defined AOI (data gaps included).': '已定義關注區域的引註簡報（含資料缺口）。',
     'Escalation score (0-100) for a defined AOI.': '已定義關注區域的升級分數（0–100）。',
     'What entered or left a defined AOI since the last sweep.': '自上次掃描以來進入或離開已定義關注區域的項目。',
+    # Click plural messages (ngettext): both forms share one Chinese sentence.
+    'Did you mean {possibility}?': '您是不是要輸入 {possibility}？',
+    '(Did you mean one of: {possibilities}?)': '（您是不是要輸入以下其中之一：{possibilities}？）',
+    'Got unexpected extra argument ({args})': '收到非預期的額外引數（{args}）',
+    'Got unexpected extra arguments ({args})': '收到非預期的額外引數（{args}）',
+    'Takes {nargs} values but 1 was given.': '需要 {nargs} 個值，但只給了 1 個。',
+    'Takes {nargs} values but {len} were given.': '需要 {nargs} 個值，但給了 {len} 個。',
+    'Option {name!r} requires an argument.': '選項 {name!r} 需要一個引數。',
+    'Option {name!r} requires {nargs} arguments.': '選項 {name!r} 需要 {nargs} 個引數。',
+    '{value!r} is not {choice}.': '{value!r} 不是 {choice}。',
+    '{value!r} is not one of {choices}.': '{value!r} 不是 {choices} 其中之一。',
+    '{value!r} does not match the format {format}.': '{value!r} 不符合格式 {format}。',
+    '{value!r} does not match the formats {formats}.': '{value!r} 不符合格式 {formats}。',
+    '{len_type} values are required, but {len_value} was given.': '需要 {len_type} 個值，但給了 {len_value} 個。',
+    '{len_type} values are required, but {len_value} were given.': '需要 {len_type} 個值，但給了 {len_value} 個。',
 }
 
 # `intel` CLI: command help, table headers, console messages.
@@ -439,6 +454,13 @@ CLI: dict[str, str] = {
         '  dashboard  即時網頁儀表板（預設 http://127.0.0.1:8501）\n'
         '  collector  背景資料收集器'
     ),
+    '--lang requires a value: --lang zh-TW|en': '--lang 需要指定值：--lang zh-TW|en',
+    'Unsupported --lang value {value!r}; using zh-TW. Use --lang zh-TW|en.': (
+        '不支援的 --lang 值 {value!r}，改用 zh-TW。請使用 --lang zh-TW|en。'
+    ),
+    'Unsupported WORLD_INTEL_LANG value {value!r}; using zh-TW. Supported values: zh-TW, en.': (
+        '不支援的 WORLD_INTEL_LANG 值 {value!r}，改用 zh-TW。可用值：zh-TW、en。'
+    ),
 }
 
 # reports.py, daily digest, situation brief.
@@ -552,6 +574,52 @@ REPORTS: dict[str, str] = {
     'SEISMIC: {quakes} earthquakes (max M{magnitude}). FIRES: {fires} clusters.': '地震：{quakes} 起（最大規模 M{magnitude}）。野火：{fires} 個火點群。',
     'CYBER: {iocs} IOCs. HEALTH: {outbreaks} high-concern outbreaks.': '網路：{iocs} 筆入侵指標（IOC）。健康：{outbreaks} 起高度關注疫情。',
     'SPACE: Kp {kp}. AIR TRAFFIC: {aircraft} airborne. CONGESTION: {congestion}%.': '太空：Kp {kp}。航空交通：空中共 {aircraft} 架。壅塞率：{congestion}%。',
+    # analysis/aoi.py: AOI brief, change digest (also POSTed to the webhook).
+    '# AOI Brief: {name}': '# 關注區域簡報：{name}',
+    'Center: {lat}, {lon} (radius {radius} km)': '中心：{lat}, {lon}（半徑 {radius} 公里）',
+    'Polygon: {n} vertices (bounding center {lat:.4f}, {lon:.4f}; radius {radius:.0f} km)': '多邊形：{n} 個頂點（外接中心 {lat:.4f}, {lon:.4f}；半徑 {radius:.0f} 公里）',
+    'Corridor: {n} waypoints, width {width:.0f} km (bounding center {lat:.4f}, {lon:.4f}; radius {radius:.0f} km)': '走廊：{n} 個航點，寬度 {width:.0f} 公里（外接中心 {lat:.4f}, {lon:.4f}；半徑 {radius:.0f} 公里）',
+    'Military Flights': '軍用航班',
+    'Conflict Events (ACLED)': '衝突事件（ACLED）',
+    'Aviation (sampled)': '航空（抽樣）',
+    'News Headline Mentions': '新聞標題提及',
+    'Military Bases': '軍事基地',
+    'Nuclear Facilities': '核設施',
+    'Undersea Cables': '海底電纜',
+    'Datacenters': '資料中心',
+    'Spaceports': '太空發射場',
+    '_None observed in range._': '_範圍內未觀測到。_',
+    'Conflict events': '衝突事件',
+    '{label}: partial coverage: {partial}': '{label}：僅部分涵蓋：{partial}',
+    "News is scoped by the AOI's name, not its location ({reason}); articles may be unrelated to the area.": '新聞是依關注區域名稱而非位置搜尋（{reason}）；文章可能與該區域無關。',
+    'reverse geocoding unavailable': '無法反向地理編碼',
+    'Reverse geocoding failed: {error}': '反向地理編碼失敗：{error}',
+    'No named place at these coordinates.': '這組座標沒有已命名的地點。',
+    'Pipelines/undersea cables: matched against the bounding circle, not the exact {kind} shape.': '管線／海底電纜：以外接圓比對，而非精確的{kind}形狀。',
+    'circle': '圓形',
+    'polygon': '多邊形',
+    'corridor': '走廊',
+    'M{magnitude} {place} ({distance} km)': 'M{magnitude} {place}（{distance} 公里）',
+    '{callsign} ({origin}, {distance} km)': '{callsign}（{origin}，{distance} 公里）',
+    '{event_type}, {loc} ({distance} km)': '{event_type}，{loc}（{distance} 公里）',
+    '{count} detections, max FRP {frp} ({distance} km)': '{count} 筆偵測，最大 FRP {frp}（{distance} 公里）',
+    '{count} fire detections ({distance} km)': '{count} 筆野火偵測（{distance} 公里）',
+    '{count} sampled aircraft observed': '觀測到 {count} 架抽樣航空器',
+    '{title} ({domain})': '{title}（{domain}）',
+    '{name} ({distance} km)': '{name}（{distance} 公里）',
+    'unknown origin': '來源國不明',
+    'unknown source': '來源不明',
+    'conflict event': '衝突事件',
+    'unspecified': '未指明',
+    'untitled': '無標題',
+    '# AOI Digest': '# 關注區域摘要',
+    '## {name} ({kind})': '## {name}（{kind}）',
+    '_Error: {error}_': '_錯誤：{error}_',
+    '_Baseline established; changes will report from the next sweep._': '_已建立基準；變更將從下次掃描起回報。_',
+    '_No changes since the last sweep._': '_自上次掃描以來無變更。_',
+    '- NEW [{domain}] {summary}': '- 新增 [{domain}] {summary}',
+    '- DEPARTED [{domain}] {summary}': '- 離開 [{domain}] {summary}',
+    '- data gap: {gap}': '- 資料缺口：{gap}',
 }
 
 # dashboard/index.html: static text, attributes and JS-built strings.

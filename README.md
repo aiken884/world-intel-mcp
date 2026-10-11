@@ -149,7 +149,7 @@ export WORLD_INTEL_LANG=en           # 環境變數
 world-intel --lang en cli markets    # 單次指定；--lang 只能放在子指令之前
 ```
 
-- 接受值為 `zh-TW` 與 `en`；其他值或空值一律回退為 `zh-TW`。
+- 支援 `en*`、`zh*`，其他一律 zh-TW。只看第一段語言碼，並容忍 POSIX 寫法（例如 `en_US.UTF-8`、`en-AU`、`zh_TW.UTF-8`）；`zh-CN`、`zh-HK` 等沒有對應語系，視同 `zh-TW`；無法辨識的值（如 `fr`、`eng`）或空值回退為 `zh-TW`。
 - 翻譯範圍：`intel` CLI（指令說明、表格欄名、訊息）、網頁儀表板，以及報告、每日摘要、情勢簡報的固定文字。情勢簡報使用 Ollama 時，zh-TW 會要求模型以台灣繁體中文輸出。
 - 不翻譯：外部 API 回傳的資料（例如新聞標題）、MCP 工具名稱／說明／參數、JSON 輸出的鍵名、stderr 的 logger 訊息，以及儀表板與 collector 的 argparse 說明。
 

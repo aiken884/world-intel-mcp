@@ -12,17 +12,29 @@ from typing import Any
 
 DEFAULT_LOCALE = "zh-TW"
 _HTML_LANG = {"zh-TW": "zh-Hant-TW", "en": "en"}
-_EN = {"en", "en-us", "en-gb"}
-_ZH = {"zh", "zh-tw", "zh-hant", "zh-hant-tw"}
+
+
+def resolve_locale(raw: str | None) -> str | None:
+    """Map a POSIX/BCP-47-ish language string to a supported locale.
+
+    Drops ``.encoding`` and ``@modifier``, treats ``_`` as ``-``, lowercases,
+    then decides on the *first* subtag only (``eng`` is not ``en``). Any
+    ``zh*`` is served zh-TW, the only Chinese catalog. Returns None when the
+    value is not recognised, so callers can warn before falling back.
+    """
+    if not raw:
+        return None
+    tag = raw.strip().split("@", 1)[0].split(".", 1)[0].replace("_", "-").lower()
+    first = tag.split("-", 1)[0]
+    if first == "en":
+        return "en"
+    if first == "zh":
+        return "zh-TW"
+    return None
 
 
 def get_locale() -> str:
-    raw = os.environ.get("WORLD_INTEL_LANG", "").strip().replace("_", "-").lower()
-    if raw in _EN:
-        return "en"
-    if raw in _ZH:
-        return "zh-TW"
-    return DEFAULT_LOCALE
+    return resolve_locale(os.environ.get("WORLD_INTEL_LANG")) or DEFAULT_LOCALE
 
 
 def _load_catalog(locale: str) -> dict[str, str]:

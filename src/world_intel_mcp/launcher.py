@@ -10,16 +10,28 @@ import os
 import sys
 from typing import Callable
 
-from .i18n import t
+from .i18n import DEFAULT_LOCALE, resolve_locale, t
+
+
+class LangUsageError(ValueError):
+    """``--lang`` was given without a usable value."""
 
 
 def pop_lang(args: list[str]) -> tuple[str | None, list[str]]:
-    """Strip a leading ``--lang X`` / ``--lang=X`` (only before the subcommand)."""
-    if args and args[0] == "--lang" and len(args) >= 2:
-        return args[1], args[2:]
-    if args and args[0].startswith("--lang="):
-        return args[0].split("=", 1)[1], args[1:]
-    return None, args
+    """Strip a leading ``--lang X`` / ``--lang=X`` (only before the subcommand).
+
+    A missing value (nothing after ``--lang``, ``--lang=``, or a value that is
+    really the next flag such as ``--lang --help``) raises LangUsageError.
+    """
+    if args and args[0] == "--lang":
+        value, rest = (args[1], args[2:]) if len(args) >= 2 else ("", [])
+    elif args and args[0].startswith("--lang="):
+        value, rest = args[0].split("=", 1)[1], args[1:]
+    else:
+        return None, args
+    if not value.strip() or value.startswith("-"):
+        raise LangUsageError(value)
+    return value, rest
 
 
 def _run_mcp() -> None:
@@ -66,9 +78,34 @@ def _usage() -> str:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    lang, args = pop_lang(args)
-    if lang:
-        os.environ["WORLD_INTEL_LANG"] = lang
+    try:
+        lang, args = pop_lang(args)
+    except LangUsageError:
+        print(t("--lang requires a value: --lang zh-TW|en"), file=sys.stderr)
+        print(_usage(), file=sys.stderr)
+        return 2
+    if lang is not None:
+        # The command line wins over the environment variable.
+        if resolve_locale(lang) is None:
+            os.environ["WORLD_INTEL_LANG"] = DEFAULT_LOCALE
+            msg = t(
+                "Unsupported --lang value {value!r}; using zh-TW. Use --lang zh-TW|en.",
+                value=lang,
+            )
+            print(msg, file=sys.stderr)
+        else:
+            os.environ["WORLD_INTEL_LANG"] = lang
+    else:
+        # The library falls back silently; the launcher is where the user
+        # is told about a bad value, once.
+        env_value = os.environ.get("WORLD_INTEL_LANG", "")
+        if env_value.strip() and resolve_locale(env_value) is None:
+            msg = t(
+                "Unsupported WORLD_INTEL_LANG value {value!r}; using zh-TW. "
+                "Supported values: zh-TW, en.",
+                value=env_value,
+            )
+            print(msg, file=sys.stderr)
     if not args or args[0] in {"-h", "--help"}:
         print(_usage())
         return 0
