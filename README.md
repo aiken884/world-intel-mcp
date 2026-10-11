@@ -184,7 +184,8 @@ python3 -I scripts/verify-macos-build.py --exe dist/world-intel/world-intel --ex
 - 只對應建置機架構（Apple Silicon arm64）。
 - 未簽署、未公證。本機自建自用不受 Gatekeeper 影響；若要傳給他人，需另行簽署。
 - 不含 `[vector]`（fastembed／Qdrant）與 `[pdf]`（WeasyPrint）功能；`intel report --format html` 仍可用。
-- 凍結版儀表板會讀取執行檔旁的 `dist/world-intel/.env`，不會讀取專案根目錄的 `.env`。金鑰請放在該處，或以環境變數提供。
+- 金鑰檔位置：凍結版的儀表板（`dashboard`）與 collector（`collector`）都只讀取執行檔旁的 `dist/world-intel/.env`（已用建置產物實測），不會讀取專案根目錄的 `.env`，也不會讀取 `dist/.env` 或 `dist/world-intel/_internal/.env`。金鑰請放在該處，或以環境變數提供。
+- 重建（`scripts/build-macos.sh`）會清空 `dist/`，但會先備份、建置成功後還原 `dist/world-intel/.env`（權限保持不變），金鑰不會因重建而消失。
 
 ---
 
