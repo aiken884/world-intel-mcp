@@ -330,12 +330,14 @@ def render_dashboard_html(html: str) -> str:
     return html.replace("<script>", snippet + "<script>", 1)
 ```
 
-- [ ] **Step 4: 測試環境釘語系** — 修改 `src/world_intel_mcp/tests/conftest.py`：在 `import pytest` 之後、其他 `world_intel_mcp` import 之前加入（import 期求值的 Click 說明後處理會讀到 `en`）：
+- [ ] **Step 4: 測試環境釘語系** — 修改 `src/world_intel_mcp/tests/conftest.py`：加入 `pytest_configure` hook（在收集測試模組、也就是 import `world_intel_mcp.cli` 之前執行，import 期的 Click 說明後處理才會讀到 `en`）：
 
 ```python
 import os
 
-os.environ["WORLD_INTEL_LANG"] = "en"  # must precede importing world_intel_mcp.cli
+
+def pytest_configure(config: pytest.Config) -> None:
+    os.environ["WORLD_INTEL_LANG"] = "en"  # before any test module imports world_intel_mcp.cli
 ```
 
 並在檔案內新增 autouse fixture：
@@ -624,36 +626,45 @@ from .i18n import get_locale, t
 
 ```python
 def _localize_commands(group: click.Group) -> None:
-    """Translate command/option help in place (Click reads docstrings once)."""
+    """Translate command/option help in place (Click reads docstrings once).
+
+    The English original is kept on ``_wi_help_en`` so tests (and a second
+    call) always see the msgid, never an already-translated string.
+    """
     for cmd in group.commands.values():
         if cmd.help:
-            cmd.help = t(cmd.help)
+            cmd.help = t(cmd.__dict__.setdefault("_wi_help_en", cmd.help))
         if cmd.short_help:
-            cmd.short_help = t(cmd.short_help)
+            cmd.short_help = t(cmd.__dict__.setdefault("_wi_short_help_en", cmd.short_help))
         for param in cmd.params:
             if getattr(param, "help", None):
-                param.help = t(param.help)
+                param.help = t(param.__dict__.setdefault("_wi_help_en", param.help))
         if isinstance(cmd, click.Group):
             _localize_commands(cmd)
 
 
 def _install_click_translations() -> None:
-    """Route Click's own gettext strings ("Usage:", "Options:" ...) through t()."""
-    import click.core
-    import click.exceptions
-    import click.formatting
-    import click.parser
+    """Route Click's own gettext strings ("Usage:", "Options:" ...) through t().
 
-    for mod in (click.core, click.exceptions, click.formatting, click.parser):
+    Every click.* module does ``from gettext import gettext as _`` and looks
+    ``_`` up as a module global at call time, so rebinding the global works.
+    Scanning sys.modules (instead of a fixed module list) keeps this working
+    across Click versions that move code between modules.
+    """
+    import gettext
+    import sys
+
+    for name, mod in list(sys.modules.items()):
+        if not (name == "click" or name.startswith("click.")) or mod is None:
+            continue
         original = getattr(mod, "_", None)
-        if original is None or getattr(original, "_wi_wrapped", False):
+        if original is not gettext.gettext:
             continue
 
         def _wrap(message, _orig=original, **kw):
             translated = t(message)
             return translated if translated != message else _orig(message, **kw)
 
-        _wrap._wi_wrapped = True  # type: ignore[attr-defined]
         mod._ = _wrap  # type: ignore[attr-defined]
 
 
@@ -755,7 +766,9 @@ def test_every_command_and_option_help_has_a_translation():
     missing = []
     def walk(g):
         for c in g.commands.values():
-            for text in [c.help, *[getattr(p, "help", None) for p in c.params]]:
+            texts = [c.__dict__.get("_wi_help_en", c.help)]
+            texts += [p.__dict__.get("_wi_help_en", getattr(p, "help", None)) for p in c.params]
+            for text in texts:
                 if text and text not in zh_TW.MESSAGES:
                     missing.append(text)
             if isinstance(c, click.Group):
@@ -974,6 +987,7 @@ function _t(s, vars) {
     if (!Object.keys(I18N).length) return;
     var ATTRS = ['placeholder', 'title', 'aria-label'];
     var SKIP = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1 };
+    var SKIP_CLASS = /\bleaflet-(tile|marker|shadow|overlay)-pane\b/;
     function text(node) {
         var raw = node.nodeValue, s = raw.trim();
         if (s && _hasOwn.call(I18N, s)) node.nodeValue = raw.replace(s, I18N[s]);
@@ -987,16 +1001,26 @@ function _t(s, vars) {
     function walk(n) {
         if (n.nodeType === 3) { text(n); return; }
         if (n.nodeType !== 1 || SKIP[n.tagName]) return;
+        if (n.className && typeof n.className === 'string' && SKIP_CLASS.test(n.className)) return;
         attrs(n);
         for (var c = n.firstChild; c; c = c.nextSibling) walk(c);
     }
     walk(document.documentElement);
-    new MutationObserver(function (muts) {
-        muts.forEach(function (m) {
+    // Batch per animation frame; skip Leaflet's tile/marker/shadow/overlay panes
+    // (high-churn, data-only). Popups and tooltips are still translated.
+    var queue = [], scheduled = false;
+    function flush() {
+        scheduled = false;
+        var items = queue; queue = [];
+        items.forEach(function (m) {
             if (m.type === 'childList') { m.addedNodes.forEach(walk); }
             else if (m.type === 'characterData') { text(m.target); }
             else if (m.type === 'attributes') { attrs(m.target); }
         });
+    }
+    new MutationObserver(function (muts) {
+        muts.forEach(function (m) { queue.push(m); });
+        if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
     }).observe(document.documentElement, {
         childList: true, subtree: true, characterData: true,
         attributes: true, attributeFilter: ATTRS
@@ -1038,6 +1062,8 @@ WORLD_INTEL_LANG=zh-TW .venv/bin/intel-dashboard --port 8599
 ```
 開 `http://127.0.0.1:8599/`，截圖確認：頂列、圖層面板、各抽屜面板標題、搜尋框預設字、載入狀態皆為繁體中文；地圖與資料未壞；Console 無新增錯誤。將仍為英文的 UI 字串補進字典（資料內容本身維持英文屬正常）。
 
+- [ ] **Step 7b: 效能檢查** — 在實機檢視時開啟瀏覽器效能面板（或 `console.time`），確認啟動後 30 秒內地圖互動（縮放、拖曳、圖層開關）無明顯卡頓；若翻譯器造成可感知延遲，縮小觀察範圍到 `#topBar`、`#layers`、抽屜與 popup 容器，不得退回「不翻譯」。
+
 - [ ] **Step 8: 全套測試** — 同 Task 3 Step 7；Expected：全綠（含已移除 xfail 的靜態文字完整性測試）。
 
 - [ ] **Step 9: Commit** — `feat(dashboard): zh-TW localization via injected catalog and DOM translator`
@@ -1074,10 +1100,16 @@ from world_intel_mcp import launcher
         (["--lang=zh-TW", "mcp"], "zh-TW", ["mcp"]),
         (["cli", "--lang", "en"], None, ["cli", "--lang", "en"]),  # 子指令之後原樣傳遞
         ([], None, []),
+        (["--lang"], None, ["--lang"]),  # 缺值：原樣保留，之後以未知指令回報
     ],
 )
 def test_pop_lang(args, lang, rest):
     assert launcher.pop_lang(args) == (lang, rest)
+
+
+def test_missing_lang_value_is_a_usage_error(capsys):
+    assert launcher.main(["--lang"]) == 2
+    assert "--lang" in capsys.readouterr().err
 
 
 def test_unknown_subcommand_returns_2(capsys):
@@ -1282,6 +1314,7 @@ rm -rf "$ROOT/build" "$ROOT/dist"
   --exclude-module fastembed \
   --exclude-module qdrant_client \
   --exclude-module weasyprint \
+  --exclude-module world_intel_mcp.tests \
   "$ROOT/packaging/world_intel_entry.py"
 
 echo "Built: $ROOT/dist/world-intel/world-intel"
@@ -1304,10 +1337,12 @@ not just exit codes.
 
 import argparse
 import json
+import queue
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -1345,29 +1380,58 @@ def check_mcp(exe: str, cwd: str, expected: set[str]) -> None:
         [exe, "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, cwd=cwd, env=scrubbed_env(),
     )
+    lines: "queue.Queue[str | None]" = queue.Queue()
+
+    def pump() -> None:  # reader thread: gives recv() a real timeout
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    threading.Thread(target=pump, daemon=True).start()
 
     def send(obj: dict) -> None:
         proc.stdin.write(json.dumps(obj) + "\n")
         proc.stdin.flush()
 
-    def recv() -> dict:
-        line = proc.stdout.readline()  # blocks until the server answers; killed by timeout guard below
-        return json.loads(line)
+    def recv(msg_id: int, timeout: float = 90.0) -> dict | None:
+        """Next JSON-RPC response with this id; notifications are skipped."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                line = lines.get(timeout=max(0.1, deadline - time.time()))
+            except queue.Empty:
+                break
+            if line is None:
+                break
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                check(False, f"MCP stdout carried non-JSON-RPC output: {line[:80]!r}")
+                continue
+            if msg.get("id") == msg_id:
+                return msg
+        return None
 
     try:
         send({"jsonrpc": "2.0", "id": 1, "method": "initialize",
               "params": {"protocolVersion": "2024-11-05", "capabilities": {},
                          "clientInfo": {"name": "verify", "version": "0"}}})
-        init = recv()
-        check(init.get("result", {}).get("serverInfo") is not None, "MCP initialize returns serverInfo")
+        init = recv(1)
+        check(bool(init and init.get("result", {}).get("serverInfo")), "MCP initialize returns serverInfo")
         send({"jsonrpc": "2.0", "method": "notifications/initialized"})
         send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        tools = recv()["result"]["tools"]
+        resp = recv(2)
+        tools = (resp or {}).get("result", {}).get("tools")
+        check(tools is not None, "MCP tools/list answered before timeout")
+        if tools is None:
+            return
         names = {t["name"] for t in tools}
         check(names == expected, f"MCP tool-name set equals source registry ({len(names)} vs {len(expected)}); "
                                  f"missing={sorted(expected - names)[:5]} extra={sorted(names - expected)[:5]}")
+        check(all(t.get("inputSchema") for t in tools), "every MCP tool carries an inputSchema")
     finally:
         proc.kill()
+        proc.wait(timeout=10)
 
 
 def free_port() -> int:
@@ -1399,6 +1463,7 @@ def check_dashboard(exe: str, cwd: str) -> None:
         check(True, "dashboard /api/aois returns valid JSON")
     finally:
         proc.kill()
+        proc.wait(timeout=10)
 
 
 def main() -> int:
@@ -1423,8 +1488,10 @@ if __name__ == "__main__":
 - [ ] **Step 4: 建置**
 
 ```bash
-cd /Users/aikenlin/Projects/world-intel-mcp && chmod +x scripts/build-macos.sh && scripts/build-macos.sh 2>&1 | tail -25
+cd /Users/aikenlin/Projects/world-intel-mcp && chmod +x scripts/build-macos.sh
+set -o pipefail; scripts/build-macos.sh 2>&1 | tail -25; echo "build exit: ${PIPESTATUS[0]:-$?}"
 ```
+同時檢查 `build/world-intel/warn-world-intel.txt` 中與 `world_intel_mcp`、`mcp`、`uvicorn`、`starlette` 有關的 missing module 警告；並確認 `dist/world-intel/_internal/world_intel_mcp/dashboard/index.html` 存在。
 Expected：`Built: .../dist/world-intel/world-intel`，`file` 顯示 Mach-O 64-bit executable arm64。若出現 `ModuleNotFoundError`／缺資料檔，依 PyInstaller 警告（`build/world-intel/warn-world-intel.txt`）補 `--hidden-import` 或 `--collect-all <pkg>`，每次補完重建，並把最終旗標寫回腳本。
 
 - [ ] **Step 5: 黑箱驗收**
