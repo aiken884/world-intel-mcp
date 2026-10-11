@@ -66,8 +66,19 @@ a { color: var(--accent); text-decoration: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ═══════════════ MAP ═══════════════ */
-#map { position: fixed; inset: 0; z-index: 1; }
+#map { position: fixed; inset: 0; z-index: 1; background: #0b0f1a; }
 .leaflet-container { background: var(--bg) !important; }
+/* Basemap is OpenStreetMap (light): darken the tile pane only, so markers,
+   clusters and lines (other panes) keep their own colours. */
+.leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(0.9) saturate(0.5);
+}
+.leaflet-control-attribution {
+    margin-bottom: 40px !important; /* clear bottom ticker (34px) */
+    background: rgba(7,11,20,0.78) !important; color: var(--text) !important;
+    font-size: 0.62rem;
+}
+.leaflet-control-attribution a { color: var(--accent) !important; }
 .leaflet-control-zoom {
     margin-bottom: 50px !important; /* clear bottom ticker */
 }
@@ -967,9 +978,14 @@ function _restoreCachedVector() {
 
 // ════════════ MAP INIT ════════════
 function initMap() {
-    map = L.map('map', { zoomControl: false, attributionControl: false, worldCopyJump: true }).setView([20, 0], 2.5);
+    map = L.map('map', { zoomControl: false, attributionControl: true, worldCopyJump: true }).setView([20, 0], 2.5);
     L.control.zoom({ position: 'bottomleft' }).addTo(map);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(map);
+    // OSM tile policy requires a visible credit; no Leaflet advertising prefix.
+    map.attributionControl.setPrefix(false);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
     var clusterOpts = function(cls, size) {
         return {
             maxClusterRadius: size || 40,
@@ -1504,6 +1520,24 @@ function showDrawerDetail(id) {
         }, 15000);
     }
 }
+
+// ════════════ MAP ATTRIBUTION LINKS ════════════
+// Leaflet's attribution control is outside the normal link flow; in the pywebview
+// window a plain navigation would replace the whole dashboard. Capture-phase,
+// delegated: always hand these links to the OS browser instead.
+document.addEventListener('click', function(e) {
+    var a = e.target && e.target.closest ? e.target.closest('.leaflet-control-attribution a') : null;
+    if (!a) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var href = a.getAttribute('href');
+    if (!href) return;
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.open_url) {
+        window.pywebview.api.open_url(href);
+    } else {
+        window.open(href, '_blank', 'noopener');
+    }
+}, true);
 
 // ════════════ GLOBAL LINK INTERCEPTOR ════════════
 document.addEventListener('click', function(e) {

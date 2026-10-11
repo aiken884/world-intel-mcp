@@ -110,6 +110,14 @@ intel-dashboard              # http://localhost:8501
 intel-dashboard --port 9000  # custom port
 ```
 
+#### 底圖與授權（Basemap & licensing）
+
+儀表板底圖使用 OpenStreetMap 標準圖磚（`tile.openstreetmap.org`），免金鑰，地圖右下角固定顯示「© OpenStreetMap contributors」出處標示。使用上受 [OSM 圖磚使用政策](https://operations.osmfoundation.org/policies/tiles/) 約束：僅限個人／小量使用、必須保留出處標示、請勿大量預抓圖磚。
+
+- 斷網或圖磚載入失敗時，地圖仍會顯示標記與資料，只是沒有底圖。
+- OSM 是淺色圖，儀表板以 CSS 濾鏡（只作用在圖磚層）轉為深色，不影響標記與叢集。
+- 要換其他圖磚來源，只需修改 `src/world_intel_mcp/dashboard/index.html` 中 `initMap()` 內的 `L.tileLayer(...)` 一處（連同 `attribution` 文字）。
+
 ### PDF/HTML Reports
 
 ```bash
