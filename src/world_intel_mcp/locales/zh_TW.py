@@ -165,6 +165,21 @@ CLICK: dict[str, str] = {
     'Cited brief for a defined AOI (data gaps included).': '已定義關注區域的引註簡報（含資料缺口）。',
     'Escalation score (0-100) for a defined AOI.': '已定義關注區域的升級分數（0–100）。',
     'What entered or left a defined AOI since the last sweep.': '自上次掃描以來進入或離開已定義關注區域的項目。',
+    # Click plural messages (ngettext): both forms share one Chinese sentence.
+    'Did you mean {possibility}?': '您是不是要輸入 {possibility}？',
+    '(Did you mean one of: {possibilities}?)': '（您是不是要輸入以下其中之一：{possibilities}？）',
+    'Got unexpected extra argument ({args})': '收到非預期的額外引數（{args}）',
+    'Got unexpected extra arguments ({args})': '收到非預期的額外引數（{args}）',
+    'Takes {nargs} values but 1 was given.': '需要 {nargs} 個值，但只給了 1 個。',
+    'Takes {nargs} values but {len} were given.': '需要 {nargs} 個值，但給了 {len} 個。',
+    'Option {name!r} requires an argument.': '選項 {name!r} 需要一個引數。',
+    'Option {name!r} requires {nargs} arguments.': '選項 {name!r} 需要 {nargs} 個引數。',
+    '{value!r} is not {choice}.': '{value!r} 不是 {choice}。',
+    '{value!r} is not one of {choices}.': '{value!r} 不是 {choices} 其中之一。',
+    '{value!r} does not match the format {format}.': '{value!r} 不符合格式 {format}。',
+    '{value!r} does not match the formats {formats}.': '{value!r} 不符合格式 {formats}。',
+    '{len_type} values are required, but {len_value} was given.': '需要 {len_type} 個值，但給了 {len_value} 個。',
+    '{len_type} values are required, but {len_value} were given.': '需要 {len_type} 個值，但給了 {len_value} 個。',
 }
 
 # `intel` CLI: command help, table headers, console messages.

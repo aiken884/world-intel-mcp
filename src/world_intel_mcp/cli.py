@@ -2668,26 +2668,41 @@ def _localize_commands(group: click.Group) -> None:
 def _install_click_translations() -> None:
     """Route Click's own gettext strings ("Usage:", "Options:" ...) through t().
 
-    Every click.* module does ``from gettext import gettext as _`` and looks
-    ``_`` up as a module global at call time, so rebinding the global works.
-    Scanning sys.modules (instead of a fixed module list) keeps this working
-    across Click versions that move code between modules.
+    Every click.* module does ``from gettext import gettext as _`` (and
+    ``ngettext`` for plural messages) and looks the name up as a module
+    global at call time, so rebinding the global works. Scanning sys.modules
+    (instead of a fixed module list) keeps this working across Click versions
+    that move code between modules. Plural msgids are looked up in the same
+    catalog: ``n == 1`` selects the singular msgid, anything else the plural.
     """
     import gettext
     import sys
 
+    # Click imports shell_completion lazily; load it so the scan sees it.
+    import click.shell_completion  # noqa: F401
+
+    def _wrap_gettext(original):
+        def _wrap(message, **kw):
+            translated = t(message)
+            return translated if translated != message else original(message, **kw)
+
+        return _wrap
+
+    def _wrap_ngettext(original):
+        def _wrap(singular, plural, n):
+            msgid = singular if n == 1 else plural
+            translated = t(msgid)
+            return translated if translated != msgid else original(singular, plural, n)
+
+        return _wrap
+
     for name, mod in list(sys.modules.items()):
         if not (name == "click" or name.startswith("click.")) or mod is None:
             continue
-        original = getattr(mod, "_", None)
-        if original is not gettext.gettext:
-            continue
-
-        def _wrap(message, _orig=original, **kw):
-            translated = t(message)
-            return translated if translated != message else _orig(message, **kw)
-
-        mod._ = _wrap  # type: ignore[attr-defined]
+        if getattr(mod, "_", None) is gettext.gettext:
+            mod._ = _wrap_gettext(gettext.gettext)  # type: ignore[attr-defined]
+        if getattr(mod, "ngettext", None) is gettext.ngettext:
+            mod.ngettext = _wrap_ngettext(gettext.ngettext)  # type: ignore[attr-defined]
 
 
 if get_locale() != "en":
