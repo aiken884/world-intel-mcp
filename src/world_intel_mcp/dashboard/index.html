@@ -831,6 +831,61 @@ function trunc(s, n) { n = n || 50; s = s || ''; return s.length > n ? s.slice(0
 function ago(ts) { if (!ts) return '\u2014'; var s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000); if (s < 60) return s + 's'; if (s < 3600) return Math.floor(s/60) + 'm'; if (s < 86400) return Math.floor(s/3600) + 'h'; return Math.floor(s/86400) + 'd'; }
 function _withinTimeWindow(ts) { if (!ts) return true; var age = Date.now() - new Date(ts).getTime(); return age < 7 * 86400000; }
 
+// ════════════ I18N ════════════
+// window.__I18N__ is injected by the server (empty for English). _t() is for
+// strings built from data; the DOM translator below replaces whole text
+// nodes / attributes that exactly match a catalog entry, including nodes
+// inserted later by the panels and Leaflet popups.
+var I18N = window.__I18N__ || {};
+var _hasOwn = Object.prototype.hasOwnProperty;
+function _t(s, vars) {
+    var r = _hasOwn.call(I18N, s) ? I18N[s] : s;
+    if (vars) { r = r.replace(/\{(\w+)\}/g, function(m, k) { return vars[k] != null ? vars[k] : m; }); }
+    return r;
+}
+(function () {
+    if (!Object.keys(I18N).length) return;
+    var ATTRS = ['placeholder', 'title', 'aria-label'];
+    var SKIP = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1 };
+    var SKIP_CLASS = /\bleaflet-(tile|marker|shadow|overlay)-pane\b/;
+    function text(node) {
+        var raw = node.nodeValue, s = raw.trim();
+        if (s && _hasOwn.call(I18N, s)) node.nodeValue = raw.replace(s, I18N[s]);
+    }
+    function attrs(el) {
+        ATTRS.forEach(function (a) {
+            var v = el.getAttribute && el.getAttribute(a);
+            if (v && _hasOwn.call(I18N, v.trim())) el.setAttribute(a, I18N[v.trim()]);
+        });
+    }
+    function walk(n) {
+        if (n.nodeType === 3) { text(n); return; }
+        if (n.nodeType !== 1 || SKIP[n.tagName]) return;
+        if (n.className && typeof n.className === 'string' && SKIP_CLASS.test(n.className)) return;
+        attrs(n);
+        for (var c = n.firstChild; c; c = c.nextSibling) walk(c);
+    }
+    walk(document.documentElement);
+    // Batch per animation frame; Leaflet churns tile/marker panes constantly.
+    var queue = [], scheduled = false;
+    function flush() {
+        scheduled = false;
+        var items = queue; queue = [];
+        items.forEach(function (m) {
+            if (m.type === 'childList') { m.addedNodes.forEach(walk); }
+            else if (m.type === 'characterData') { text(m.target); }
+            else if (m.type === 'attributes') { attrs(m.target); }
+        });
+    }
+    new MutationObserver(function (muts) {
+        muts.forEach(function (m) { queue.push(m); });
+        if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
+    }).observe(document.documentElement, {
+        childList: true, subtree: true, characterData: true,
+        attributes: true, attributeFilter: ATTRS
+    });
+})();
+
 // ════════════ STATE ════════════
 var latestData = null;
 var map = null;
@@ -967,8 +1022,8 @@ function showDetail(type, d) {
 
     if (type === 'earthquake') {
         var mag = d.magnitude || 0;
-        title = 'M' + (typeof mag === 'number' ? mag.toFixed(1) : mag) + ' \u2014 ' + (d.place || 'Unknown');
-        subtitle = ago(d.time) + ' ago';
+        title = 'M' + (typeof mag === 'number' ? mag.toFixed(1) : mag) + ' \u2014 ' + (d.place || _t('Unknown'));
+        subtitle = _t('{age} ago', {age: ago(d.time)});
         fields = [
             ['Magnitude', typeof mag === 'number' ? mag.toFixed(1) : mag, mag >= 6 ? 'crit' : mag >= 5 ? 'high' : ''],
             ['Location', d.place || '\u2014'],
@@ -977,11 +1032,11 @@ function showDetail(type, d) {
             ['Coordinates', d.latitude != null ? d.latitude.toFixed(3) + ', ' + d.longitude.toFixed(3) : '\u2014'],
             ['Tsunami Alert', d.tsunami_alert ? 'YES' : 'No', d.tsunami_alert ? 'crit' : 'ok'],
             ['Felt Reports', d.felt_reports || '\u2014'],
-            ['Alert Level', d.alert_level || 'None', d.alert_level === 'red' ? 'crit' : d.alert_level === 'orange' ? 'high' : '']
+            ['Alert Level', d.alert_level || _t('None'), d.alert_level === 'red' ? 'crit' : d.alert_level === 'orange' ? 'high' : '']
         ];
         if (d.url) link = d.url;
     } else if (type === 'military') {
-        title = d.callsign || d.icao24 || 'Unknown Aircraft';
+        title = d.callsign || d.icao24 || _t('Unknown Aircraft');
         subtitle = d.origin_country || '';
         fields = [
             ['Callsign', d.callsign || '\u2014'],
@@ -996,7 +1051,7 @@ function showDetail(type, d) {
         ];
     } else if (type === 'conflict') {
         var fat = d.fatalities || 0;
-        title = (d.event_type || d.type || 'Conflict Event');
+        title = (d.event_type || d.type || _t('Conflict Event'));
         subtitle = (d.country || '') + (d.event_date ? ' \u2014 ' + d.event_date : '');
         fields = [
             ['Event Type', d.event_type || d.type || '\u2014'],
@@ -1010,7 +1065,7 @@ function showDetail(type, d) {
             ['Notes', trunc(d.notes || '', 120)]
         ];
     } else if (type === 'fire') {
-        title = 'Fire Cluster \u2014 ' + d.fire_count + ' detections';
+        title = _t('Fire Cluster \u2014 {n} detections', {n: d.fire_count});
         subtitle = d.lat.toFixed(2) + ', ' + d.lon.toFixed(2);
         fields = [
             ['Fire Count', String(d.fire_count), d.fire_count > 50 ? 'crit' : d.fire_count > 10 ? 'high' : ''],
@@ -1020,8 +1075,8 @@ function showDetail(type, d) {
         ];
     } else if (type === 'convergence') {
         var score = d.convergence_score || 0;
-        title = d.name || 'Convergence Zone';
-        subtitle = 'Score: ' + score.toFixed(1);
+        title = d.name || _t('Convergence Zone');
+        subtitle = _t('Score: {score}', {score: score.toFixed(1)});
         fields = [
             ['Convergence Score', score.toFixed(1), score >= 7 ? 'crit' : score >= 4 ? 'high' : '']
         ];
@@ -1034,7 +1089,7 @@ function showDetail(type, d) {
         if (d.lat != null) fields.push(['Coordinates', d.lat.toFixed(3) + ', ' + d.lon.toFixed(3)]);
     } else if (type === 'nuclear') {
         var cs = d.concern_score || 0;
-        title = (d.site || 'Unknown Site') + ' \u2014 M' + (d.magnitude || 0).toFixed(1);
+        title = (d.site || _t('Unknown Site')) + ' \u2014 M' + (d.magnitude || 0).toFixed(1);
         subtitle = d.site_country || '';
         fields = [
             ['Concern Score', cs.toFixed(1), cs >= 70 ? 'crit' : cs >= 50 ? 'high' : cs >= 30 ? 'high' : ''],
@@ -1047,7 +1102,7 @@ function showDetail(type, d) {
             ['Coordinates', d.latitude != null ? d.latitude.toFixed(3) + ', ' + d.longitude.toFixed(3) : '\u2014']
         ];
     } else if (type === 'military_base') {
-        title = d.name || 'Base';
+        title = d.name || _t('Base');
         subtitle = d.operator + ' \u2014 ' + (d.country || '');
         fields = [
             ['Name', d.name || '\u2014'],
@@ -1059,7 +1114,7 @@ function showDetail(type, d) {
             ['Coordinates', d.latitude != null ? d.latitude.toFixed(3) + ', ' + d.longitude.toFixed(3) : '\u2014']
         ];
     } else if (type === 'port') {
-        title = d.name || 'Port';
+        title = d.name || _t('Port');
         subtitle = (d.type || '').replace(/_/g, ' ') + ' \u2014 ' + (d.country || '');
         fields = [
             ['Name', d.name || '\u2014'],
@@ -1070,7 +1125,7 @@ function showDetail(type, d) {
             ['Coordinates', d.latitude != null ? d.latitude.toFixed(3) + ', ' + d.longitude.toFixed(3) : '\u2014']
         ];
     } else if (type === 'nuclear_facility') {
-        title = d.name || 'Facility';
+        title = d.name || _t('Facility');
         subtitle = (d.type || '').replace(/_/g, ' ') + ' \u2014 ' + (d.country || '');
         var st = d.status || '';
         fields = [
@@ -1084,7 +1139,7 @@ function showDetail(type, d) {
             ['Coordinates', d.latitude != null ? d.latitude.toFixed(3) + ', ' + d.longitude.toFixed(3) : '\u2014']
         ];
     } else if (type === 'exposure') {
-        title = d.city || 'Exposed City';
+        title = d.city || _t('Exposed City');
         subtitle = (d.country || '') + ' \u2014 ' + (d.population || '');
         fields = [
             ['City', d.city || '\u2014'],
@@ -1095,7 +1150,7 @@ function showDetail(type, d) {
             ['Distance', d.distance_km != null ? d.distance_km + ' km' : '\u2014']
         ];
     } else if (type === 'airtraffic') {
-        title = d.callsign || 'Aircraft';
+        title = d.callsign || _t('Aircraft');
         subtitle = d.origin || '';
         fields = [
             ['Callsign', d.callsign || '\u2014'],
@@ -1105,7 +1160,7 @@ function showDetail(type, d) {
             ['Coordinates', d.lat != null ? d.lat + ', ' + d.lon : '\u2014']
         ];
     } else if (type === 'traffic_city') {
-        title = d.name || 'City';
+        title = d.name || _t('City');
         subtitle = d.country || '';
         var congPct2 = d.congestion_pct || 0;
         fields = [
@@ -1117,7 +1172,7 @@ function showDetail(type, d) {
             ['Coordinates', d.lat + ', ' + d.lon]
         ];
     } else if (type === 'webcam') {
-        title = d.title || 'Camera';
+        title = d.title || _t('Camera');
         subtitle = (d.city || '') + (d.country ? ', ' + d.country : '');
         fields = [
             ['City', d.city || '\u2014'],
@@ -1127,7 +1182,7 @@ function showDetail(type, d) {
         ];
         link = d.player_url || '';
     } else if (type === 'news') {
-        title = d.title || 'Article';
+        title = d.title || _t('Article');
         subtitle = (d.feed_name || '') + (d._geo_country ? ' \u2014 ' + d._geo_country : '');
         fields = [
             ['Title', d.title || '\u2014'],
@@ -1153,8 +1208,8 @@ function showDetail(type, d) {
         ];
     } else if (type === 'climate') {
         var ta = d.temp_anomaly_c || 0;
-        title = (d.name || d.zone || 'Climate Zone');
-        subtitle = (ta > 0 ? '+' : '') + ta.toFixed(1) + '\u00B0C anomaly';
+        title = (d.name || d.zone || _t('Climate Zone'));
+        subtitle = _t('{v}\u00B0C anomaly', {v: (ta > 0 ? '+' : '') + ta.toFixed(1)});
         fields = [
             ['Zone', d.name || d.zone || '\u2014'],
             ['Temp Anomaly', (ta > 0 ? '+' : '') + ta.toFixed(1) + '\u00B0C', Math.abs(ta) > 2 ? 'crit' : Math.abs(ta) > 1 ? 'high' : ''],
@@ -1173,7 +1228,7 @@ function showDetail(type, d) {
     var body = '';
     // Webcam: show preview image at top of detail panel
     if (type === 'webcam' && d.preview_url) {
-        body += '<img src="' + esc(d.preview_url) + '" style="width:100%;border-radius:6px;margin-bottom:10px;" alt="' + esc(d.title || 'Webcam') + '" onerror="this.style.display=\'none\'">';
+        body += '<img src="' + esc(d.preview_url) + '" style="width:100%;border-radius:6px;margin-bottom:10px;" alt="' + esc(d.title || _t('Webcam')) + '" onerror="this.style.display=\'none\'">';
     }
     body += fields.map(function(f) {
         return '<div class="df"><span class="df-l">' + esc(f[0]) + '</span><span class="df-v ' + (f[2] || '') + '">' + esc(String(f[1])) + '</span></div>';
@@ -1233,7 +1288,7 @@ function showDrawerDetail(id) {
     var c = COLORS[type] || 'var(--accent)';
 
     if (type === 'news') {
-        title = d.title || 'Article';
+        title = d.title || _t('Article');
         subtitle = d.feed_name || d.source || '';
         fields = [
             ['Source', d.feed_name || d.source || '\u2014'],
@@ -1244,7 +1299,7 @@ function showDrawerDetail(id) {
         if (d.summary || d.description) fields.push(['Summary', trunc(d.summary || d.description || '', 500)]);
         link = d.link || d.url || '';
     } else if (type === 'cyber') {
-        title = d.indicator || d.ioc || d.url || 'Threat';
+        title = d.indicator || d.ioc || d.url || _t('Threat');
         subtitle = d.threat_type || d.type || '';
         fields = [
             ['Indicator', d.indicator || d.ioc || d.url || '\u2014'],
@@ -1256,7 +1311,7 @@ function showDrawerDetail(id) {
         ];
         link = d.reference || d.reference_url || '';
     } else if (type === 'health') {
-        title = d.title || 'Health Alert';
+        title = d.title || _t('Health Alert');
         subtitle = d.organization || '';
         fields = [
             ['Organization', d.organization || '\u2014'],
@@ -1266,7 +1321,7 @@ function showDrawerDetail(id) {
         ];
         link = d.link || d.url || '';
     } else if (type === 'ai') {
-        title = d.title || 'AI Paper';
+        title = d.title || _t('AI Paper');
         subtitle = d.feed_name || '';
         fields = [
             ['Source', d.feed_name || '\u2014'],
@@ -1276,8 +1331,8 @@ function showDrawerDetail(id) {
         ];
         link = d.link || d.url || '';
     } else if (type === 'social') {
-        title = d.title || 'Post';
-        subtitle = 'r/' + (d.subreddit || '?') + '  \u2022  Score: ' + (d.score || 0);
+        title = d.title || _t('Post');
+        subtitle = 'r/' + (d.subreddit || '?') + '  \u2022  ' + _t('Score: {score}', {score: (d.score || 0)});
         fields = [
             ['Subreddit', 'r/' + (d.subreddit || '\u2014')],
             ['Score', String(d.score || 0)],
@@ -1289,8 +1344,8 @@ function showDrawerDetail(id) {
         link = d.url || d.permalink || '';
     } else if (type === 'prediction') {
         var prob = d.probability || d.yes_price;
-        title = d.question || d.title || 'Market';
-        subtitle = prob != null ? 'Probability: ' + (typeof prob === 'number' ? (prob * 100).toFixed(0) + '%' : String(prob)) : '';
+        title = d.question || d.title || _t('Market');
+        subtitle = prob != null ? _t('Probability: {p}', {p: (typeof prob === 'number' ? (prob * 100).toFixed(0) + '%' : String(prob))}) : '';
         fields = [
             ['Question', d.question || d.title || '\u2014'],
             ['Probability', prob != null ? (typeof prob === 'number' ? (prob * 100).toFixed(1) + '%' : String(prob)) : '\u2014'],
@@ -1300,7 +1355,7 @@ function showDrawerDetail(id) {
         ];
         link = d.url || '';
     } else if (type === 'election') {
-        title = (d.country || '?') + ' \u2014 ' + (d.election_type || 'Election');
+        title = (d.country || '?') + ' \u2014 ' + (d.election_type || _t('Election'));
         subtitle = d.date || '';
         fields = [
             ['Country', d.country || '\u2014'],
@@ -1312,7 +1367,7 @@ function showDrawerDetail(id) {
             ['Description', d.description || '\u2014']
         ];
     } else if (type === 'outage') {
-        title = d.entity_name || d.country || d.location || 'Outage';
+        title = d.entity_name || d.country || d.location || _t('Outage');
         subtitle = d.entity_type || '';
         fields = [
             ['Entity', d.entity_name || '\u2014'],
@@ -1323,7 +1378,7 @@ function showDrawerDetail(id) {
             ['End', d.until || d.end || '\u2014']
         ];
     } else if (type === 'navwarning') {
-        title = (d.navArea || d.area || 'Nav Warning');
+        title = (d.navArea || d.area || _t('Nav Warning'));
         subtitle = d.status || '';
         fields = [
             ['Area', d.navArea || d.area || '\u2014'],
@@ -1332,19 +1387,19 @@ function showDrawerDetail(id) {
             ['Text', d.text || d.description || '\u2014']
         ];
     } else if (type === 'aoi') {
-        title = d.name || 'AOI';
+        title = d.name || _t('AOI');
         var ak = d.kind || 'circle';
-        subtitle = ak.toUpperCase() + (ak === 'circle' ? ' • ' + d.radius_km + ' km radius' : ak === 'corridor' && d.geometry ? ' • ' + d.geometry.width_km + ' km wide' : '');
+        subtitle = ak.toUpperCase() + (ak === 'circle' ? ' • ' + _t('{n} km radius', {n: d.radius_km}) : ak === 'corridor' && d.geometry ? ' • ' + _t('{n} km wide', {n: d.geometry.width_km}) : '');
         var ls = d.last_sweep;
         fields = [
             ['Name', d.name || '—'],
             ['Shape', ak],
             ['Center', (d.lat != null ? d.lat.toFixed(3) : '—') + ', ' + (d.lon != null ? d.lon.toFixed(3) : '—')],
-            ['Last sweep', ls ? ago(ls.taken_at * 1000) + ' ago (' + ls.total + ' items)' : 'never — run intel-collector --sources aoi', ls ? '' : 'high']
+            ['Last sweep', ls ? _t('{age} ago ({n} items)', {age: ago(ls.taken_at * 1000), n: ls.total}) : _t('never — run intel-collector --sources aoi'), ls ? '' : 'high']
         ];
         if (ls) { Object.keys(ls.counts).sort().forEach(function(k) { fields.push([k.replace(/_/g, ' '), String(ls.counts[k])]); }); }
     } else if (type === 'pipeline') {
-        title = d.name || 'Pipeline';
+        title = d.name || _t('Pipeline');
         subtitle = d.route || '';
         var ps = d.status || '';
         fields = [
@@ -1356,7 +1411,7 @@ function showDrawerDetail(id) {
             ['Notes', d.notes || '\u2014']
         ];
     } else if (type === 'service') {
-        title = (d.provider || '?') + ' \u2014 ' + (d.title || 'Incident');
+        title = (d.provider || '?') + ' \u2014 ' + (d.title || _t('Incident'));
         subtitle = d.severity || '';
         fields = [
             ['Provider', d.provider || '\u2014'],
@@ -1367,7 +1422,7 @@ function showDrawerDetail(id) {
         ];
         link = d.link || '';
     } else if (type === 'airtraffic') {
-        title = d.callsign || 'Aircraft';
+        title = d.callsign || _t('Aircraft');
         subtitle = d.origin || '';
         fields = [
             ['Callsign', d.callsign || '\u2014'],
@@ -1377,7 +1432,7 @@ function showDrawerDetail(id) {
             ['Coordinates', d.lat != null ? d.lat + ', ' + d.lon : '\u2014']
         ];
     } else if (type === 'traffic_city') {
-        title = d.name || 'City';
+        title = d.name || _t('City');
         subtitle = d.country || '';
         var congPct = d.congestion_pct || 0;
         fields = [
@@ -1389,7 +1444,7 @@ function showDrawerDetail(id) {
             ['Coordinates', d.lat + ', ' + d.lon]
         ];
     } else if (type === 'webcam') {
-        title = d.title || 'Camera';
+        title = d.title || _t('Camera');
         subtitle = (d.city || '') + (d.country ? ', ' + d.country : '');
         fields = [
             ['City', d.city || '\u2014'],
@@ -1421,7 +1476,7 @@ function showDrawerDetail(id) {
 
     var body = '';
     if (type === 'webcam' && d.preview_url) {
-        body += '<img src="' + esc(d.preview_url) + '" style="width:100%;border-radius:6px;margin-bottom:10px;" alt="' + esc(d.title || 'Webcam') + '" onerror="this.style.display=\'none\'">';
+        body += '<img src="' + esc(d.preview_url) + '" style="width:100%;border-radius:6px;margin-bottom:10px;" alt="' + esc(d.title || _t('Webcam')) + '" onerror="this.style.display=\'none\'">';
     }
     body += fields.map(function(f) {
         return '<div class="df"><span class="df-l">' + esc(f[0]) + '</span><span class="df-v ' + (f[2] || '') + '">' + esc(String(f[1])) + '</span></div>';
@@ -1650,7 +1705,7 @@ function updateMapConflict(data) {
             icon: L.divIcon({ className: 'mk-conflict', iconSize: [size, size], iconAnchor: [size/2, size/2] })
         });
         var tip = label + ' \u2014 ' + (e.country || '');
-        if (fat > 0) tip += ' (' + fat + ' fatal)';
+        if (fat > 0) tip += ' (' + _t('{n} fatal', {n: fat}) + ')';
         else if (e.severity) tip += ' [' + e.severity + ']';
         mk.bindTooltip(tip, { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
         mk.on('click', function() { showDetail('conflict', e); });
@@ -1675,7 +1730,7 @@ function updateMapFires(data) {
             var mk = L.marker([c.lat, c.lon], {
                 icon: L.divIcon({ className: 'mk-fire', iconSize: [size, size], iconAnchor: [size/2, size/2] })
             });
-            mk.bindTooltip(c.fire_count + ' fires \u2014 ' + rName, { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
+            mk.bindTooltip(_t('{n} fires \u2014 {region}', {n: c.fire_count, region: rName}), { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
             mk.on('click', function() { showDetail('fire', obj); });
             mk.addTo(mapLayers.fires);
         });
@@ -1683,7 +1738,7 @@ function updateMapFires(data) {
     var clusterCount = mapLayers.fires.getLayers().length;
     // Show cluster count for sidebar (what's on the map), full total in tooltip
     $('#cntFires').textContent = clusterCount;
-    $('#cntFires').title = (data.total_fires || total) + ' individual fire detections';
+    $('#cntFires').title = _t('{n} individual fire detections', {n: (data.total_fires || total)});
 }
 
 function updateMapConvergence(data) {
@@ -1698,7 +1753,7 @@ function updateMapConvergence(data) {
         var mk = L.marker([h.lat, h.lon], {
             icon: L.divIcon({ className: 'mk-conv', iconSize: [size, size], iconAnchor: [size/2, size/2] })
         });
-        mk.bindTooltip((h.name || '?') + ' \u2014 Score ' + score.toFixed(1), { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
+        mk.bindTooltip(_t('{name} \u2014 Score {score}', {name: (h.name || '?'), score: score.toFixed(1)}), { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
         mk.on('click', function() { showDetail('convergence', h); });
         mk.addTo(mapLayers.convergence);
     });
@@ -1831,7 +1886,7 @@ function updateMapInfra(data) {
         var mk = L.marker([tr.lat, tr.lon], {
             icon: L.divIcon({ className: iconCls, iconSize: [8, 8], iconAnchor: [4, 4] })
         });
-        mk.bindTooltip('<b>' + esc(tr.name) + '</b> <span style="opacity:0.7">' + esc(tr.type) + ' · ' + (tr.oil_flow_mbd || 0) + ' mbd oil · ~' + (tr.daily_vessel_transits || 0) + ' vessels/day</span>', { className: 'mk-tip', direction: 'top', offset: [0, -5] });
+        mk.bindTooltip('<b>' + esc(tr.name) + '</b> <span style="opacity:0.7">' + esc(tr.type) + ' · ' + _t('{mbd} mbd oil · ~{vessels} vessels/day', {mbd: (tr.oil_flow_mbd || 0), vessels: (tr.daily_vessel_transits || 0)}) + '</span>', { className: 'mk-tip', direction: 'top', offset: [0, -5] });
         mk.on('click', function() {
             showDetail('trade_route', {
                 name: tr.name, type: tr.type, oil_flow_mbd: tr.oil_flow_mbd,
@@ -1922,7 +1977,7 @@ function updateMapTraffic(data) {
         var mk = L.marker([c.lat, c.lon], {
             icon: L.divIcon({ className: 'mk-traffic' + cls, iconSize: [size, size], iconAnchor: [size/2, size/2] })
         });
-        mk.bindTooltip(esc(c.name) + ' ' + pct + '% congestion', { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
+        mk.bindTooltip(esc(c.name) + ' ' + _t('{pct}% congestion', {pct: pct}), { className: 'mk-tip', direction: 'top', offset: [0, -size/2] });
         mk.on('click', function() { showDetail('traffic_city', c); });
         mk.addTo(mapLayers.traffic);
     });
@@ -1957,7 +2012,7 @@ function updateMapWebcams(data) {
         var mk = L.marker([cam.lat, cam.lon], {
             icon: L.divIcon({ className: 'mk-cam', iconSize: [7, 7], iconAnchor: [3.5, 3.5] })
         });
-        mk.bindTooltip(esc(cam.title || 'Camera') + '<br><span style="opacity:0.7">' + esc(cam.city || '') + '</span>', { className: 'mk-tip', direction: 'top', offset: [0, -4] });
+        mk.bindTooltip(esc(cam.title || _t('Camera')) + '<br><span style="opacity:0.7">' + esc(cam.city || '') + '</span>', { className: 'mk-tip', direction: 'top', offset: [0, -4] });
         mk.on('click', function() { showDetail('webcam', cam); });
         mk.addTo(mapLayers.webcams);
     });
@@ -2156,13 +2211,13 @@ function updateDrawer(data) {
     if (data.strategic_posture && !data.strategic_posture.error) {
         var sp = data.strategic_posture;
         var compScore = sp.composite_score || 0;
-        var riskLvl = sp.risk_level || 'UNKNOWN';
+        var riskLvl = sp.risk_level || _t('UNKNOWN');
         var riskColor = riskLvl === 'CRITICAL' ? 'var(--red)' : riskLvl === 'HIGH' ? 'var(--amber)' : riskLvl === 'ELEVATED' ? '#ff9100' : 'var(--green)';
         h += '<div class="sh">STRATEGIC POSTURE</div>';
         h += '<div style="display:flex;align-items:center;gap:12px;padding:6px 0">';
         h += '<div style="font-size:2rem;font-weight:700;color:' + riskColor + '">' + compScore.toFixed(0) + '</div>';
         h += '<div><div style="font-size:0.85rem;font-weight:600;color:' + riskColor + '">' + esc(riskLvl) + '</div>';
-        h += '<div class="dim" style="font-size:0.6rem">' + (sp.domains_assessed || 0) + ' domains assessed</div></div>';
+        h += '<div class="dim" style="font-size:0.6rem">' + _t('{n} domains assessed', {n: (sp.domains_assessed || 0)}) + '</div></div>';
         h += '</div>';
         var ds = sp.domain_scores || {};
         h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px">';
@@ -2333,7 +2388,7 @@ function updateDrawer(data) {
             if (r && r.price_cents_kwh != null) eRateRows.push({name: s.charAt(0).toUpperCase() + s.slice(1), price: r.price_cents_kwh, period: r.period, change: r.change, change_pct: r.change_pct});
         });
         if (eRateRows.length) {
-            h += '<div class="sub">Electricity (\u00A2/kWh) — ' + esc(er.state || 'US') + ' <span class="dim" style="font-size:0.55rem">' + esc(eRateRows[0].period || '') + '</span></div>';
+            h += '<div class="sub">' + _t('Electricity (\u00A2/kWh) — {state}', {state: esc(er.state || 'US')}) + ' <span class="dim" style="font-size:0.55rem">' + esc(eRateRows[0].period || '') + '</span></div>';
             h += '<table class="dtable"><thead><tr><th>Sector</th><th>\u00A2/kWh</th><th>MoM</th></tr></thead><tbody>';
             eRateRows.forEach(function(item) {
                 var chg = item.change_pct != null ? '<span class="' + cls(item.change_pct) + '">' + fmtPct(item.change_pct) + '%</span>' : '<span class="dim">\u2014</span>';
@@ -2396,7 +2451,7 @@ function updateDrawer(data) {
         var svcInc = data.service_status.incidents || [];
         var activeSvc = data.service_status.active_incidents || 0;
         if (svcInc.length) {
-            h += '<div class="sub">Cloud Services' + (activeSvc > 0 ? ' (' + activeSvc + ' active)' : '') + '</div><table class="dtable"><thead><tr><th>Provider</th><th>Incident</th><th>Sev</th></tr></thead><tbody>';
+            h += '<div class="sub">' + _t('Cloud Services') + (activeSvc > 0 ? ' (' + _t('{n} active', {n: activeSvc}) + ')' : '') + '</div><table class="dtable"><thead><tr><th>Provider</th><th>Incident</th><th>Sev</th></tr></thead><tbody>';
             svcInc.slice(0, 10).forEach(function(s) {
                 var sevCls = s.severity === 'critical' ? 'down' : s.severity === 'high' ? 'warn' : 'dim';
                 var did = _storeItem('service', s);
@@ -2408,7 +2463,7 @@ function updateDrawer(data) {
     if (data.nav_warnings && !data.nav_warnings.error) {
         var navs = data.nav_warnings.warnings || [];
         if (navs.length) {
-            h += '<div class="sub">Nav Warnings (' + navs.length + ')</div><table class="dtable"><thead><tr><th>Area</th><th>Warning</th></tr></thead><tbody>';
+            h += '<div class="sub">' + _t('Nav Warnings ({n})', {n: navs.length}) + '</div><table class="dtable"><thead><tr><th>Area</th><th>Warning</th></tr></thead><tbody>';
             navs.slice(0, 8).forEach(function(w) {
                 var did = _storeItem('navwarning', w);
                 h += '<tr data-click="' + did + '"><td class="bright">' + esc(w.navArea || w.area || '?') + '</td><td class="dim">' + esc(trunc(w.text || w.description || '\u2014', 40)) + '</td></tr>';
@@ -2477,7 +2532,7 @@ function updateDrawer(data) {
     if (data.ucdp_events && !data.ucdp_events.error) {
         var ucdp = data.ucdp_events.events || [];
         if (ucdp.length) {
-            h += '<div class="sub">UCDP Events (' + (data.ucdp_events.count || ucdp.length) + ')</div><table class="dtable"><thead><tr><th>Conflict</th><th>Deaths</th></tr></thead><tbody>';
+            h += '<div class="sub">' + _t('UCDP Events ({n})', {n: (data.ucdp_events.count || ucdp.length)}) + '</div><table class="dtable"><thead><tr><th>Conflict</th><th>Deaths</th></tr></thead><tbody>';
             ucdp.slice(0, 10).forEach(function(e) {
                 var best = e.best || e.best_fatality_estimate || 0;
                 var did = _storeItem('conflict', e);
@@ -2489,7 +2544,7 @@ function updateDrawer(data) {
     if (data.conflict_zones && !data.conflict_zones.error) {
         var czones = data.conflict_zones.events || [];
         if (czones.length) {
-            h += '<div class="sub">Active Conflict Zones (' + (data.conflict_zones.count || czones.length) + ')</div><table class="dtable"><thead><tr><th>Zone</th><th>Severity</th></tr></thead><tbody>';
+            h += '<div class="sub">' + _t('Active Conflict Zones ({n})', {n: (data.conflict_zones.count || czones.length)}) + '</div><table class="dtable"><thead><tr><th>Zone</th><th>Severity</th></tr></thead><tbody>';
             czones.forEach(function(e) {
                 var sev = e.severity || 'unknown';
                 var cls = sev === 'critical' ? 'down' : sev === 'high' ? 'warn' : 'dim';
@@ -2841,11 +2896,11 @@ function updateDrawer(data) {
     if (data.webcams && !data.webcams.error && data.webcams.count > 0) {
         var wc = data.webcams;
         h += '<div class="sh">CCTV / WEBCAMS</div>';
-        h += '<div class="dim" style="font-size:0.65rem;padding:2px 0">' + wc.count + ' cameras (' + esc(wc.category || 'traffic') + ')</div>';
+        h += '<div class="dim" style="font-size:0.65rem;padding:2px 0">' + _t('{n} cameras ({cat})', {n: wc.count, cat: esc(wc.category || 'traffic')}) + '</div>';
         (wc.cameras || []).slice(0, 12).forEach(function(cam) {
             var did = _storeItem('webcam', cam);
             h += '<div class="drawer-item" data-click="' + did + '" style="padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04)">';
-            h += '<div class="bright" style="font-size:0.7rem">' + esc(cam.title || 'Camera') + '</div>';
+            h += '<div class="bright" style="font-size:0.7rem">' + esc(cam.title || _t('Camera')) + '</div>';
             h += '<div class="dim" style="font-size:0.6rem">' + esc(cam.city || '') + (cam.country ? ', ' + esc(cam.country) : '') + '</div>';
             h += '</div>';
         });
@@ -2869,7 +2924,7 @@ function updateDrawer(data) {
         if (uf.region_breakdown) {
             var regions = Object.entries(uf.region_breakdown).sort(function(a,b){return b[1]-a[1];});
             regions.forEach(function(r) {
-                h += '<div style="font-size:0.65rem;padding:1px 0"><span class="bright">' + esc(r[0]) + '</span> <span class="dim">' + r[1] + ' ships</span></div>';
+                h += '<div style="font-size:0.65rem;padding:1px 0"><span class="bright">' + esc(r[0]) + '</span> <span class="dim">' + _t('{n} ships', {n: r[1]}) + '</span></div>';
             });
         }
         (uf.ships || []).slice(0, 15).forEach(function(s) {
@@ -2907,7 +2962,7 @@ function updateDrawer(data) {
     if (data.central_bank_rates && !data.central_bank_rates.error && (data.central_bank_rates.rates || []).length > 0) {
         var cbr = data.central_bank_rates;
         h += '<div class="sh">CENTRAL BANK RATES</div>';
-        h += '<div class="dim" style="font-size:0.6rem;padding:2px 0">' + cbr.count + ' banks' + (cbr.fred_available ? ' (FRED live)' : ' (curated)') + '</div>';
+        h += '<div class="dim" style="font-size:0.6rem;padding:2px 0">' + _t('{n} banks', {n: cbr.count}) + (cbr.fred_available ? ' (' + _t('FRED live') + ')' : ' (' + _t('curated') + ')') + '</div>';
         cbr.rates.forEach(function(r) {
             var rateCls = r.rate >= 10 ? 'crit' : r.rate >= 5 ? 'warn' : r.rate >= 2 ? 'bright' : 'good';
             h += '<div style="font-size:0.65rem;padding:1px 0">';
@@ -2924,13 +2979,13 @@ function updateDrawer(data) {
         var sources = Object.entries(cf).sort(function(a,b) { return a[1].last_updated_s_ago - b[1].last_updated_s_ago; });
         var staleCount = sources.filter(function(s) { return s[1].is_stale; }).length;
         h += '<div class="sh">DATA FRESHNESS</div>';
-        h += '<div class="dim" style="font-size:0.6rem;padding:2px 0">' + sources.length + ' sources tracked, ' + staleCount + ' stale</div>';
+        h += '<div class="dim" style="font-size:0.6rem;padding:2px 0">' + _t('{n} sources tracked, {stale} stale', {n: sources.length, stale: staleCount}) + '</div>';
         sources.forEach(function(s) {
             var name = s[0], info = s[1];
             var ageMin = Math.round(info.last_updated_s_ago / 60);
             var cls = info.is_stale ? 'crit' : ageMin > 10 ? 'warn' : 'dim';
             var label = ageMin < 1 ? '<1m' : ageMin + 'm';
-            h += '<div style="font-size:0.65rem;padding:1px 0"><span class="bright">' + esc(name) + '</span> <span class="' + cls + '">' + label + (info.is_stale ? ' STALE' : '') + '</span></div>';
+            h += '<div style="font-size:0.65rem;padding:1px 0"><span class="bright">' + esc(name) + '</span> <span class="' + cls + '">' + label + (info.is_stale ? ' ' + _t('STALE') : '') + '</span></div>';
         });
     }
 
@@ -2939,7 +2994,7 @@ function updateDrawer(data) {
         var sb = data.situation_brief;
         h += '<div class="sh">AI SITUATION BRIEF</div>';
         var aiTag = sb.ai_generated ? '<span style="color:var(--purple);font-size:0.55rem;font-weight:600;letter-spacing:0.5px"> ' + esc(sb.model) + '</span>' : '<span class="dim" style="font-size:0.55rem"> metrics fallback</span>';
-        h += '<div style="font-size:0.6rem;padding:2px 0;opacity:0.5">Generated ' + ago(new Date(sb.timestamp).getTime()) + ' ago ' + aiTag + '</div>';
+        h += '<div style="font-size:0.6rem;padding:2px 0;opacity:0.5">' + _t('Generated {age} ago', {age: ago(new Date(sb.timestamp).getTime())}) + ' ' + aiTag + '</div>';
         h += '<div style="font-size:0.7rem;line-height:1.5;padding:4px 0;white-space:pre-wrap;color:rgba(255,255,255,0.85)">' + esc(sb.brief) + '</div>';
     }
 
@@ -3028,7 +3083,7 @@ function updateAll(data) {
     // Feed health
     var feedKeys = Object.keys(data).filter(function(k) { return k !== 'source_health' && k !== 'cache_stats' && k !== 'timestamp'; });
     var okCount = feedKeys.filter(function(k) { return data[k] && !data[k].error; }).length;
-    $('#feedCount').textContent = okCount + '/' + feedKeys.length + ' feeds';
+    $('#feedCount').textContent = _t('{ok}/{total} feeds', {ok: okCount, total: feedKeys.length});
 
     if (data.timestamp) { $('#lastUpdate').textContent = new Date(data.timestamp).toLocaleTimeString(); }
 
@@ -3063,7 +3118,7 @@ function connectSSE() {
                 var loading = document.getElementById('loading');
                 if (loading && !loading.classList.contains('gone')) {
                     var label = loading.querySelector('.loading-label');
-                    if (label) label.textContent = 'LOADING FEEDS ' + data._done + '/' + data._total;
+                    if (label) label.textContent = _t('LOADING FEEDS {done}/{total}', {done: data._done, total: data._total});
                 }
                 // Hide spinner after first 3 sources arrive — show map immediately
                 if (data._done >= 3) {
@@ -3229,7 +3284,7 @@ function performSearch(q) {
 function updateMapAois(data) {
     mapLayers.aoi.clearLayers();
     var cnt = $('#cntAoi');
-    if (!data || data.error) { cnt.textContent = '!'; cnt.title = (data && data.error) || 'AOI fetch failed'; return; }
+    if (!data || data.error) { cnt.textContent = '!'; cnt.title = (data && data.error) || _t('AOI fetch failed'); return; }
     var aois = data.aois || [];
     aois.forEach(function(a) {
         var opts = { color: '#ff7f50', weight: 2, opacity: 0.9, fillColor: '#ff7f50', fillOpacity: 0.08, className: 'aoi-shape' };
@@ -3243,7 +3298,7 @@ function updateMapAois(data) {
             shape = L.circle([a.lat, a.lon], Object.assign({ radius: (a.radius_km || 0) * 1000 }, opts));
         }
         var ls = a.last_sweep;
-        var sweep = ls ? ls.total + ' items, swept ' + ago(ls.taken_at * 1000) + ' ago' : 'never swept';
+        var sweep = ls ? _t('{n} items, swept {age} ago', {n: ls.total, age: ago(ls.taken_at * 1000)}) : _t('never swept');
         shape.bindTooltip(esc(a.name) + '<br><span style="opacity:0.7">' + esc(a.kind || 'circle') + ' • ' + esc(sweep) + '</span>', { className: 'mk-tip', sticky: true });
         shape.on('click', function() { showDetail('aoi', a); });
         shape.addTo(mapLayers.aoi);
@@ -3291,7 +3346,7 @@ function updateVectorPanel(vd) {
     var statusColor = status === 'green' ? 'var(--green)' : status === 'yellow' ? 'var(--amber)' : 'var(--dim)';
     $('#vecPointCount').innerHTML = safe(
         '<span class="v">' + fmtNum(pts) + '</span> pts ' +
-        '<span style="color:' + statusColor + '">' + esc(status) + '</span>'
+        '<span style="color:' + statusColor + '">' + esc(_t(status)) + '</span>'
     );
 
     var h = '';
@@ -3363,7 +3418,7 @@ function doVecSearch() {
                     h += '</div>';
                     h += '<div class="r-text">' + esc(trunc(r.text || '', 150)) + '</div>';
                     if (r.datetime) {
-                        h += '<div class="r-time">' + ago(new Date(r.datetime).getTime()) + ' ago</div>';
+                        h += '<div class="r-time">' + _t('{age} ago', {age: ago(new Date(r.datetime).getTime())}) + '</div>';
                     }
                     h += '</div>';
                 });
@@ -3372,7 +3427,7 @@ function doVecSearch() {
         $('#vecResults').innerHTML = safe(h);
     })
     .catch(function(e) {
-        $('#vecResults').innerHTML = safe('<div class="vec-unavail">Search failed: ' + esc(String(e)) + '</div>');
+        $('#vecResults').innerHTML = safe('<div class="vec-unavail">' + _t('Search failed: {err}', {err: esc(String(e))}) + '</div>');
     })
     .finally(function() {
         _vecSearching = false;

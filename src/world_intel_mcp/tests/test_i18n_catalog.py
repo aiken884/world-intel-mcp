@@ -5,8 +5,6 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-import pytest
-
 from world_intel_mcp import i18n
 from world_intel_mcp.locales import zh_TW
 
@@ -73,11 +71,24 @@ def test_no_stale_keys_in_code_sections():
     assert not stale, f"stale keys (not used by any t()): {sorted(stale)}"
 
 
-def test_sections_do_not_overlap():
-    total = (
-        len(zh_TW.CLICK) + len(zh_TW.CLI) + len(zh_TW.REPORTS) + len(zh_TW.DASHBOARD)
-    )
-    assert len(zh_TW.MESSAGES) == total
+def test_shared_keys_have_identical_translations():
+    """A msgid may appear in several sections (the dashboard needs its own
+    copy) but must never be translated two different ways."""
+    sections = {
+        "CLICK": zh_TW.CLICK,
+        "CLI": zh_TW.CLI,
+        "REPORTS": zh_TW.REPORTS,
+        "DASHBOARD": zh_TW.DASHBOARD,
+    }
+    seen: dict[str, tuple[str, str]] = {}
+    conflicts = []
+    for name, section in sections.items():
+        for key, value in section.items():
+            if key in seen and seen[key][1] != value:
+                conflicts.append((key, seen[key], (name, value)))
+            seen.setdefault(key, (name, value))
+    assert not conflicts, conflicts
+    assert set(zh_TW.MESSAGES) == set(seen)
 
 
 def test_placeholders_match_between_msgid_and_translation():
@@ -118,7 +129,6 @@ class _TextNodes(HTMLParser):
             self.texts.add(data.strip())
 
 
-@pytest.mark.xfail(strict=True, reason="Task 5: dashboard catalog not filled yet")
 def test_dashboard_static_text_is_translated():
     parser = _TextNodes()
     parser.feed(INDEX_HTML.read_text(encoding="utf-8"))

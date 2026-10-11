@@ -23,6 +23,7 @@ from world_intel_mcp.analysis.aoi import AOIStore
 from world_intel_mcp.cache import Cache
 from world_intel_mcp.circuit_breaker import CircuitBreaker
 from world_intel_mcp.fetcher import Fetcher
+from world_intel_mcp.i18n import render_dashboard_html
 from world_intel_mcp.sources import (
     markets,
     seismology,
@@ -316,7 +317,7 @@ async def _fetch_overview() -> dict:
 async def index(request):
     """Serve the dashboard HTML page (reloads on each request during dev)."""
     html_path = Path(__file__).parent / "index.html"
-    return HTMLResponse(html_path.read_text())
+    return HTMLResponse(render_dashboard_html(html_path.read_text(encoding="utf-8")))
 
 
 async def api_overview(request):
