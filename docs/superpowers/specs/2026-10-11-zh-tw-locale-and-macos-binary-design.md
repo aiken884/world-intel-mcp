@@ -1,6 +1,6 @@
 # 設計規格：zh-TW 預設語系 + macOS 本機執行檔
 
-日期：2026-10-11　狀態：設計已核准（待 PPLX 技術審查）
+日期：2026-10-11　狀態：設計已核准；PPLX 技術審查已併入（見末段）
 
 ## 目標
 
@@ -74,3 +74,16 @@
 - 儀表板 `.env` 為「專案根目錄」載入；凍結後路徑語意不同，驗收時確認並在 README 註明。
 - 情勢簡報的中文品質取決於使用者本機 Ollama 模型。
 - 只翻譯程式內的固定文字；外部資料維持原文。
+
+## PPLX 技術審查結論（2026-10-11，已併入上文規格）
+
+採納：
+- **launcher 時序**：`launcher.py` 不依賴 Click 解析 `--lang`，自行掃描 `sys.argv` 並於**延遲 import** 任何 `world_intel_mcp.cli`／`server` 之前寫入 `WORLD_INTEL_LANG`；驗收須涵蓋 `world-intel --lang en cli --help` 與 `world-intel cli --help`。
+- **打包收集**：`--collect-submodules` 除專案套件外，另對 `mcp`、`uvicorn`、`starlette` 明列並以凍結執行檔實測（不只測開發環境）；collector 的動態 import 需逐來源實測。
+- **驗收加強**：MCP 比對**工具名稱集合**（與原始碼註冊表相同），不只比數量；儀表板驗 `/`、至少一個 `/api/*`、靜態資源與頁面載入無錯誤。
+- **i18n 格式安全**：測試要求原文與譯文的 `{placeholder}` 集合相同；`t()` 在 `format` 失敗時回退為原文格式化結果，不拋例外。
+- **import 期語系固定**：不快取 import 期翻譯結果；語系切換測試用子程序（不同環境變數、不同載入順序）。
+- **資源路徑**：凍結後以 `Path(__file__).parent` 搭配 `--collect-data` 實測，並在非專案目錄、乾淨環境（`env -i`）執行。
+- **架構**：產物僅對應建置機架構（Apple Silicon arm64），於 README 註明。
+
+不採納／已涵蓋：Gatekeeper——本機自建的檔案不帶隔離屬性，PyInstaller 於 arm64 會自動 ad-hoc 簽署，可直接執行；散布給他人才需另行簽署（已列為限制）。
