@@ -13,6 +13,13 @@
 - `scripts/build-macos.sh`: PyInstaller onedir build producing
   `dist/world-intel/world-intel` (Apple Silicon arm64). The executable is
   unsigned and not notarized.
+- macOS app: `scripts/build-macos-app.sh` builds `dist/World Intel.app` (the
+  dashboard in a native WKWebView window; closing the window quits) and
+  `scripts/make-dmg.sh` packs it into `dist/World-Intel-<version>-arm64.dmg`
+  (drag-to-Applications). New optional extra `gui` (`pywebview`); entry point
+  `world_intel_mcp.gui_app`. Ad-hoc signed, not notarized. Acceptance:
+  `scripts/verify-macos-app.py`. `scripts/build-macos.sh` now only replaces
+  `dist/world-intel/` instead of wiping all of `dist/`.
 
 ## 0.10.0 - 2026-09-02
 

@@ -25,6 +25,10 @@ intel markets                    # stock indices
 intel earthquakes --min-mag 5.0  # USGS quakes
 intel status                     # cache + circuit breaker health
 
+# macOS app + DMG (see README "macOS App (DMG)"): build, package, verify
+scripts/build-macos-app.sh && scripts/make-dmg.sh
+python3 -I scripts/verify-macos-app.py --app "dist/World Intel.app" --dmg dist/World-Intel-*-arm64.dmg
+
 # Dashboard (requires [dashboard] extra)
 intel-dashboard --port 8501
 # Or with .env auto-loaded:
