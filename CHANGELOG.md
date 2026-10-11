@@ -32,6 +32,10 @@
   one-line command.
 
 ### Fixed
+- Dashboard basemap: CARTO `dark_all` tiles now answer every request with an
+  "API KEY REQUIRED" watermark tile, so the map is switched to OpenStreetMap
+  standard tiles (no key; attribution shown; darkened with a CSS filter).
+  Basemap links open in the system browser from the native app window.
 - Dashboard HUD stat pills for quakes, nuclear, exposure, traffic and
   webcams now zoom the map on click; those layers were `L.layerGroup()`
   (no `getBounds()`) and the failure was swallowed silently. They are now
