@@ -89,7 +89,14 @@ def test_build_flow_backs_up_before_wiping_and_restores_after_building():
     src = SCRIPT.read_text(encoding="utf-8")
     assert 'BASH_SOURCE[0]}" == "$0"' in src
     i_backup = src.index("backup_dist_env", src.index("main()"))
-    i_wipe = src.index('rm -rf "$ROOT/build" "$ROOT/dist"')
+    i_wipe = src.index('rm -rf "$ROOT/build" "$ROOT/dist/world-intel"')
     i_build = src.index('"$VENV/bin/pyinstaller"')
     i_restore = src.index("restore_dist_env", i_build)
     assert i_backup < i_wipe < i_build < i_restore
+
+
+def test_cli_rebuild_leaves_the_app_bundle_and_dmg_alone():
+    """dist/World Intel.app and the DMG live next to dist/world-intel/."""
+    src = SCRIPT.read_text(encoding="utf-8")
+    assert 'rm -rf "$ROOT/dist"' not in src
+    assert '"$ROOT/dist/world-intel"' in src

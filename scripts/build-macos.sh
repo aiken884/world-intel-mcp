@@ -46,7 +46,7 @@ main() {
   uv venv --clear --python "$PYVER" "$VENV"
   uv pip install --python "$VENV/bin/python" -e ".[dashboard]" pyinstaller
 
-  rm -rf "$ROOT/build" "$ROOT/dist"
+  rm -rf "$ROOT/build" "$ROOT/dist/world-intel"
   "$VENV/bin/pyinstaller" \
     --noconfirm --clean --onedir \
     --name world-intel \
