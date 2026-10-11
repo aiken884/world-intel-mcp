@@ -54,7 +54,6 @@ def collect_msgids() -> dict[str, set[str]]:
     return found
 
 
-@pytest.mark.xfail(strict=True, reason="Task 3: cli.py add_column headers not translated yet")
 def test_every_msgid_in_code_has_a_translation():
     missing = {
         k: sorted(v) for k, v in collect_msgids().items() if k not in zh_TW.MESSAGES

@@ -35,6 +35,7 @@ from .analysis import aoi as aoi_analysis
 from .cache import Cache
 from .circuit_breaker import CircuitBreaker
 from .fetcher import Fetcher
+from .i18n import get_locale, t
 from .sources import (
     markets,
     economic,
@@ -107,7 +108,7 @@ def _bail_on_error(ctx: click.Context, data: dict) -> bool:
         _print_json(data)
         return True
     if "error" in data:
-        console.print(f"[red]Error:[/red] {escape(str(data['error']))}")
+        console.print(f"[red]{t('Error:')}[/red] {escape(str(data['error']))}")
         return True
     return False
 
@@ -123,6 +124,18 @@ def _cell(value: Any) -> Text:
     escape() the interpolated value instead.
     """
     return Text(str(value))
+
+
+class _Table(Table):
+    """Rich Table whose title and column headers are translated."""
+
+    def __init__(self, *args: Any, title: str | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, title=t(title) if title else None, **kwargs)
+
+    def add_column(self, header: Any = "", *args: Any, **kwargs: Any):  # type: ignore[override]
+        if isinstance(header, str) and header:
+            header = t(header)
+        return super().add_column(header, *args, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -158,10 +171,10 @@ def markets_cmd(ctx: click.Context, symbols: tuple[str, ...]) -> None:
 
     quotes = data.get("quotes", [])
     if not quotes:
-        console.print("[yellow]No market data available[/yellow]")
+        console.print(f"[yellow]{t('No market data available')}[/yellow]")
         return
 
-    table = Table(title="Market Indices", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Market Indices", box=box.SIMPLE_HEAVY)
     table.add_column("Symbol", style="bold")
     table.add_column("Price", justify="right")
     table.add_column("Change %", justify="right")
@@ -193,10 +206,10 @@ def crypto(ctx: click.Context, limit: int) -> None:
 
     coins = data.get("coins", [])
     if not coins:
-        console.print("[yellow]No crypto data available[/yellow]")
+        console.print(f"[yellow]{t('No crypto data available')}[/yellow]")
         return
 
-    table = Table(title=f"Top {limit} Cryptocurrencies", box=box.SIMPLE_HEAVY)
+    table = _Table(title=t("Top {limit} Cryptocurrencies", limit=limit), box=box.SIMPLE_HEAVY)
     table.add_column("#", justify="right")
     table.add_column("Symbol", style="bold")
     table.add_column("Price", justify="right")
@@ -228,14 +241,14 @@ def macro(ctx: click.Context) -> None:
         return
 
     signals = data.get("signals", {})
-    table = Table(title="Macro Signals", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Macro Signals", box=box.SIMPLE_HEAVY)
     table.add_column("Signal", style="bold")
     table.add_column("Value", justify="right")
     table.add_column("Detail")
 
     for name, info in signals.items():
         if info is None:
-            table.add_row(_cell(name), "[dim]unavailable[/dim]", "")
+            table.add_row(_cell(name), f"[dim]{t('unavailable')}[/dim]", "")
         elif isinstance(info, dict):
             val = info.get("value", info.get("price", "?"))
             detail = info.get("classification", info.get("label", ""))
@@ -262,15 +275,15 @@ def energy(ctx: click.Context) -> None:
 
     oil = data.get("oil", {})
     gas = data.get("natural_gas", {})
-    table = Table(title="Energy Prices", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Energy Prices", box=box.SIMPLE_HEAVY)
     table.add_column("Commodity", style="bold")
     table.add_column("Price", justify="right")
     table.add_column("Date")
 
     for name, info in [
-        ("Brent Crude", oil.get("brent")),
-        ("WTI Crude", oil.get("wti")),
-        ("Natural Gas", gas),
+        (t("Brent Crude"), oil.get("brent")),
+        (t("WTI Crude"), oil.get("wti")),
+        (t("Natural Gas"), gas),
     ]:
         if info and isinstance(info, dict):
             table.add_row(
@@ -290,17 +303,17 @@ def gas_prices(ctx: click.Context) -> None:
         return
 
     prices = data.get("prices", {})
-    table = Table(title="US Gas Prices — Today (AAA)", box=box.SIMPLE_HEAVY)
+    table = _Table(title="US Gas Prices — Today (AAA)", box=box.SIMPLE_HEAVY)
     table.add_column("Grade", style="bold")
     table.add_column("$/gallon", justify="right")
     table.add_column("DoD", justify="right")
     table.add_column("WoW", justify="right")
 
     grade_labels = {
-        "regular": "Regular",
-        "mid_grade": "Mid-Grade",
-        "premium": "Premium",
-        "diesel": "Diesel",
+        "regular": t("Regular"),
+        "mid_grade": t("Mid-Grade"),
+        "premium": t("Premium"),
+        "diesel": t("Diesel"),
     }
     for grade, label in grade_labels.items():
         info = prices.get(grade)
@@ -333,7 +346,7 @@ def natgas(ctx: click.Context) -> None:
         return
 
     prices = data.get("prices", [])
-    table = Table(title="US Residential Natural Gas Prices", box=box.SIMPLE_HEAVY)
+    table = _Table(title="US Residential Natural Gas Prices", box=box.SIMPLE_HEAVY)
     table.add_column("Period", style="bold")
     table.add_column("$/MCF", justify="right")
 
@@ -355,18 +368,23 @@ def electricity(ctx: click.Context, state: str | None) -> None:
 
     rates = data.get("rates", {})
     label = data.get("state", "US")
-    table = Table(
-        title=f"Electricity Rates — {escape(str(label))}", box=box.SIMPLE_HEAVY
+    table = _Table(
+        title=t("Electricity Rates — {label}", label=escape(str(label))), box=box.SIMPLE_HEAVY
     )
     table.add_column("Sector", style="bold")
     table.add_column("cents/kWh", justify="right")
     table.add_column("Period")
 
-    for sector in ("residential", "commercial", "industrial", "all_sectors"):
+    for sector, sector_label in (
+        ("residential", t("Residential")),
+        ("commercial", t("Commercial")),
+        ("industrial", t("Industrial")),
+        ("all_sectors", t("All Sectors")),
+    ):
         info = rates.get(sector)
         if info and isinstance(info, dict):
             table.add_row(
-                sector.replace("_", " ").title(),
+                sector_label,
                 f"{info.get('price_cents_kwh', '?'):.2f}",
                 _cell(info.get("period", "")),
             )
@@ -389,7 +407,7 @@ def fred(ctx: click.Context, series_id: str, limit: int) -> None:
     title = data.get("title", series_id)
     # FRED series titles are remote free text — the table title is a
     # markup surface too.
-    table = Table(title=f"FRED: {escape(str(title))}", box=box.SIMPLE_HEAVY)
+    table = _Table(title=t("FRED: {title}", title=escape(str(title))), box=box.SIMPLE_HEAVY)
     table.add_column("Date", style="bold")
     table.add_column("Value", justify="right")
 
@@ -417,10 +435,15 @@ def earthquakes(ctx: click.Context, min_mag: float, hours: int) -> None:
 
     quakes = data.get("earthquakes", [])
     console.print(
-        f"[bold]{data.get('count', 0)} earthquakes[/bold] (M{min_mag}+ in last {hours}h)\n"
+        t(
+            "[bold]{count} earthquakes[/bold] (M{min_mag}+ in last {hours}h)\n",
+            count=data.get("count", 0),
+            min_mag=min_mag,
+            hours=hours,
+        )
     )
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Mag", justify="right", style="bold")
     table.add_column("Location")
     table.add_column("Depth (km)", justify="right")
@@ -433,7 +456,7 @@ def earthquakes(ctx: click.Context, min_mag: float, hours: int) -> None:
         alert = q.get("alert_level") or ""
         table.add_row(
             f"[{style}]{mag:.1f}[/{style}]" if style else f"{mag:.1f}",
-            _cell(q.get("place", "Unknown")),
+            _cell(q.get("place", t("Unknown"))),
             f"{q.get('depth_km', 0):.1f}",
             _cell(q.get("time", "")[:19]),
             _cell(alert),
@@ -453,18 +476,28 @@ def fires(ctx: click.Context, region: str | None) -> None:
         return
 
     console.print(
-        f"[bold]{data.get('total_fires', 0)} high-confidence fires detected[/bold]\n"
+        t(
+            "[bold]{count} high-confidence fires detected[/bold]\n",
+            count=data.get("total_fires", 0),
+        )
     )
 
     for reg_name, reg_data in data.get("fires_by_region", {}).items():
         count = reg_data.get("count", 0)
         if count == 0:
             continue
-        console.print(f"  [bold]{reg_name}[/bold]: {count} fires")
+        console.print(
+            t("  [bold]{region}[/bold]: {count} fires", region=reg_name, count=count)
+        )
         for cluster in reg_data.get("top_clusters", [])[:5]:
             console.print(
-                f"    ({cluster.get('lat', 0):.1f}, {cluster.get('lon', 0):.1f}) "
-                f"— {cluster.get('fire_count', 0)} fires, FRP max {cluster.get('max_frp', 0):.0f}"
+                t(
+                    "    ({lat:.1f}, {lon:.1f}) — {fires} fires, FRP max {frp:.0f}",
+                    lat=cluster.get("lat", 0),
+                    lon=cluster.get("lon", 0),
+                    fires=cluster.get("fire_count", 0),
+                    frp=cluster.get("max_frp", 0),
+                )
             )
 
 
@@ -487,10 +520,14 @@ def conflicts(ctx: click.Context, country: str | None, days: int) -> None:
 
     events = data.get("events", [])
     console.print(
-        f"[bold]{data.get('count', 0)} conflict events[/bold] (last {days}d)\n"
+        t(
+            "[bold]{count} conflict events[/bold] (last {days}d)\n",
+            count=data.get("count", 0),
+            days=days,
+        )
     )
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Date", style="bold")
     table.add_column("Type")
     table.add_column("Country")
@@ -530,9 +567,14 @@ def flights(ctx: click.Context, bbox: str | None) -> None:
         return
 
     aircraft = data.get("aircraft", [])
-    console.print(f"[bold]{data.get('count', 0)} military aircraft detected[/bold]\n")
+    console.print(
+        t(
+            "[bold]{count} military aircraft detected[/bold]\n",
+            count=data.get("count", 0),
+        )
+    )
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Callsign", style="bold")
     table.add_column("ICAO24")
     table.add_column("Country")
@@ -561,11 +603,14 @@ def posture(ctx: click.Context) -> None:
         return
 
     console.print(
-        f"[bold]{data.get('total_military_aircraft', 0)} total military aircraft[/bold]\n"
+        t(
+            "[bold]{count} total military aircraft[/bold]\n",
+            count=data.get("total_military_aircraft", 0),
+        )
     )
     theaters = data.get("theaters", {})
 
-    table = Table(title="Theater Posture", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Theater Posture", box=box.SIMPLE_HEAVY)
     table.add_column("Theater", style="bold")
     table.add_column("Aircraft", justify="right")
     table.add_column("Countries")
@@ -600,12 +645,15 @@ def outages(ctx: click.Context) -> None:
         return
 
     console.print(
-        f"[bold]{data.get('ongoing_count', 0)} ongoing outages[/bold], "
-        f"{data.get('total_7d', 0)} in last 7 days\n"
+        t(
+            "[bold]{ongoing} ongoing outages[/bold], {total} in last 7 days\n",
+            ongoing=data.get("ongoing_count", 0),
+            total=data.get("total_7d", 0),
+        )
     )
 
     for o in data.get("outages", [])[:15]:
-        ongoing = "[red]ONGOING[/red]" if o.get("is_ongoing") else ""
+        ongoing = f"[red]{t('ONGOING')}[/red]" if o.get("is_ongoing") else ""
         countries = ", ".join(o.get("countries", [])[:5]) if o.get("countries") else ""
         console.print(
             f"  {o.get('start', '')[:16]}  {escape(countries)}  "
@@ -624,13 +672,13 @@ def cables(ctx: click.Context) -> None:
         return
 
     status_labels = {
-        0: "[green]Clear[/green]",
-        1: "[yellow]Advisory[/yellow]",
-        2: "[red]At Risk[/red]",
-        3: "[red bold]Disrupted[/red bold]",
+        0: f"[green]{t('Clear')}[/green]",
+        1: f"[yellow]{t('Advisory')}[/yellow]",
+        2: f"[red]{t('At Risk')}[/red]",
+        3: f"[red bold]{t('Disrupted')}[/red bold]",
     }
 
-    table = Table(title="Undersea Cable Health", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Undersea Cable Health", box=box.SIMPLE_HEAVY)
     table.add_column("Corridor", style="bold")
     table.add_column("Status")
     table.add_column("Cables")
@@ -663,12 +711,15 @@ def warnings(ctx: click.Context, navarea: str | None) -> None:
     if _bail_on_error(ctx, data):
         return
 
-    console.print(f"[bold]{data.get('count', 0)} active warnings[/bold]\n")
+    console.print(
+        t("[bold]{count} active warnings[/bold]\n", count=data.get("count", 0))
+    )
 
     by_area = data.get("by_navarea", {})
     if by_area:
         console.print(
-            "  By NAVAREA: " + ", ".join(f"{k}:{v}" for k, v in sorted(by_area.items()))
+            t("  By NAVAREA: ")
+            + ", ".join(f"{k}:{v}" for k, v in sorted(by_area.items()))
         )
         console.print()
 
@@ -702,11 +753,14 @@ def climate_cmd(ctx: click.Context) -> None:
     unavailable = data.get("unavailable_zones", [])
     if unavailable:
         console.print(
-            f"[yellow]Warning:[/yellow] {len(unavailable)} zones unavailable "
-            f"(Open-Meteo): {escape(', '.join(unavailable))}\n"
+            t(
+                "[yellow]Warning:[/yellow] {n} zones unavailable (Open-Meteo): {zones}\n",
+                n=len(unavailable),
+                zones=escape(", ".join(unavailable)),
+            )
         )
 
-    table = Table(title="Climate Anomalies", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Climate Anomalies", box=box.SIMPLE_HEAVY)
     table.add_column("Zone", style="bold")
     table.add_column("Temp Anomaly", justify="right")
     table.add_column("Precip Anomaly", justify="right")
@@ -716,7 +770,7 @@ def climate_cmd(ctx: click.Context) -> None:
         temp_a = z.get("temp_anomaly_c", 0)
         prec_a = z.get("precip_anomaly_pct", 0)
         t_style = "red" if temp_a > 3 else "blue" if temp_a < -3 else ""
-        flag = "[red bold]SIG[/red bold]" if key in sig else ""
+        flag = f"[red bold]{t('SIG')}[/red bold]" if key in sig else ""
         t_str = (
             f"[{t_style}]{temp_a:+.1f}C[/{t_style}]" if t_style else f"{temp_a:+.1f}C"
         )
@@ -776,11 +830,15 @@ def news_cmd(ctx: click.Context, category: str | None, limit: int) -> None:
 
     items = data.get("items", [])
     if not items:
-        console.print("[yellow]No news items available[/yellow]")
+        console.print(f"[yellow]{t('No news items available')}[/yellow]")
         return
 
     console.print(
-        f"[bold]{data.get('count', 0)} items[/bold] from {', '.join(data.get('categories_fetched', []))}\n"
+        t(
+            "[bold]{count} items[/bold] from {categories}\n",
+            count=data.get("count", 0),
+            categories=", ".join(data.get("categories_fetched", [])),
+        )
     )
 
     for item in items:
@@ -809,10 +867,13 @@ def trending(ctx: click.Context, min_count: int) -> None:
 
     keywords = data.get("keywords", [])
     console.print(
-        f"[bold]Trending keywords[/bold] (from {data.get('total_items_analyzed', 0)} items)\n"
+        t(
+            "[bold]Trending keywords[/bold] (from {n} items)\n",
+            n=data.get("total_items_analyzed", 0),
+        )
     )
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("#", justify="right")
     table.add_column("Keyword", style="bold")
     table.add_column("Count", justify="right")
@@ -839,13 +900,19 @@ def gdelt(ctx: click.Context, query: str, mode: str, limit: int) -> None:
 
     if mode == "artlist":
         articles = data.get("articles", [])
-        console.print(f"[bold]{len(articles)} articles[/bold] for '{query}'\n")
+        console.print(
+            t(
+                "[bold]{count} articles[/bold] for '{query}'\n",
+                count=len(articles),
+                query=query,
+            )
+        )
         for a in articles[:20]:
             title = escape(a.get("title", "")[:80])
             domain = escape(a.get("domain", ""))
             console.print(f"  [bold]{title}[/bold]  ({domain})")
     else:
-        console.print(f"[bold]Timeline volume for '{query}'[/bold]")
+        console.print(t("[bold]Timeline volume for '{query}'[/bold]", query=query))
         _print_json(data)
 
 
@@ -867,10 +934,10 @@ def predictions(ctx: click.Context, limit: int) -> None:
 
     mkts = data.get("markets", [])
     if not mkts:
-        console.print("[yellow]No prediction market data available[/yellow]")
+        console.print(f"[yellow]{t('No prediction market data available')}[/yellow]")
         return
 
-    table = Table(title="Prediction Markets", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Prediction Markets", box=box.SIMPLE_HEAVY)
     table.add_column("Question", max_width=50)
     table.add_column("YES %", justify="right")
     table.add_column("Sentiment")
@@ -909,11 +976,18 @@ def displacement_cmd(ctx: click.Context, year: int | None) -> None:
         return
 
     totals = data.get("global_totals", {})
-    console.print(f"[bold]Global Displacement ({data.get('year', '?')})[/bold]")
-    console.print(f"  Grand total: {totals.get('grand_total', 0):,}\n")
+    console.print(
+        t(
+            "[bold]Global Displacement ({year})[/bold]",
+            year=data.get("year", "?"),
+        )
+    )
+    console.print(
+        t("  Grand total: {total:,}\n", total=totals.get("grand_total", 0))
+    )
 
     by_origin = data.get("by_origin", [])
-    table = Table(title="Top Countries of Origin", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Top Countries of Origin", box=box.SIMPLE_HEAVY)
     table.add_column("Country", style="bold")
     table.add_column("Total Displaced", justify="right")
     table.add_column("Refugees", justify="right")
@@ -946,15 +1020,18 @@ def delays(ctx: click.Context) -> None:
 
     delayed = data.get("delayed", [])
     console.print(
-        f"[bold]{data.get('delayed_count', 0)} airports with delays[/bold] "
-        f"(checked {data.get('total_checked', 0)})\n"
+        t(
+            "[bold]{delayed} airports with delays[/bold] (checked {checked})\n",
+            delayed=data.get("delayed_count", 0),
+            checked=data.get("total_checked", 0),
+        )
     )
 
     if not delayed:
-        console.print("[green]No major airport delays![/green]")
+        console.print(f"[green]{t('No major airport delays!')}[/green]")
         return
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Airport", style="bold")
     table.add_column("Name")
     table.add_column("Delay Info")
@@ -967,7 +1044,7 @@ def delays(ctx: click.Context) -> None:
                 for s in statuses
             )
             if statuses
-            else "Details unavailable"
+            else t("Details unavailable")
         )
         table.add_row(
             _cell(d.get("code", "")), _cell(d.get("name", "")), _cell(info[:80])
@@ -993,25 +1070,33 @@ def threats(ctx: click.Context, limit: int) -> None:
 
     by_sev = data.get("by_severity", {})
     console.print(
-        f"[bold]{data.get('count', 0)} threats[/bold] "
-        f"({data.get('feeds_successful', 0)}/{data.get('feeds_attempted', 0)} feeds)"
+        t(
+            "[bold]{count} threats[/bold] ({ok}/{attempted} feeds)",
+            count=data.get("count", 0),
+            ok=data.get("feeds_successful", 0),
+            attempted=data.get("feeds_attempted", 0),
+        )
     )
     console.print(
-        f"  [red]Critical: {by_sev.get('critical', 0)}[/red]  "
-        f"[yellow]High: {by_sev.get('high', 0)}[/yellow]  "
-        f"Medium: {by_sev.get('medium', 0)}  "
-        f"[dim]Low: {by_sev.get('low', 0)}[/dim]\n"
+        t(
+            "  [red]Critical: {critical}[/red]  [yellow]High: {high}[/yellow]  "
+            "Medium: {medium}  [dim]Low: {low}[/dim]\n",
+            critical=by_sev.get("critical", 0),
+            high=by_sev.get("high", 0),
+            medium=by_sev.get("medium", 0),
+            low=by_sev.get("low", 0),
+        )
     )
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Severity")
     table.add_column("Type")
     table.add_column("Indicator", max_width=40)
     table.add_column("Threat")
     table.add_column("Feed")
 
-    for t in data.get("threats", [])[:limit]:
-        sev = t.get("severity", "")
+    for threat in data.get("threats", [])[:limit]:
+        sev = threat.get("severity", "")
         sev_style = {
             "critical": "red bold",
             "high": "yellow",
@@ -1025,10 +1110,10 @@ def threats(ctx: click.Context, limit: int) -> None:
         )
         table.add_row(
             sev_str,
-            _cell(t.get("type", "")),
-            _cell((t.get("indicator", ""))[:40]),
-            _cell((t.get("threat", ""))[:30]),
-            _cell(t.get("source_feed", "")),
+            _cell(threat.get("type", "")),
+            _cell((threat.get("indicator", ""))[:40]),
+            _cell((threat.get("threat", ""))[:30]),
+            _cell(threat.get("source_feed", "")),
         )
     console.print(table)
 
@@ -1052,18 +1137,27 @@ def brief(ctx: click.Context, country_code: str) -> None:
     llm_tag = (
         "[green]LLM[/green]"
         if data.get("llm_available")
-        else "[yellow]data-only[/yellow]"
+        else f"[yellow]{t('data-only')}[/yellow]"
     )
-    console.print(f"[bold]Intelligence Brief: {country_code}[/bold] ({llm_tag})\n")
+    console.print(
+        t(
+            "[bold]Intelligence Brief: {country}[/bold] ({tag})\n",
+            country=country_code,
+            tag=llm_tag,
+        )
+    )
     # LLM-generated free text: escape so bracketed sequences render
     # instead of parsing as markup.
-    console.print(escape(str(data.get("brief", "No brief available."))))
+    console.print(escape(str(data.get("brief", t("No brief available.")))))
 
     d = data.get("data", {})
     if d.get("gdp") or d.get("recent_events"):
         console.print(
-            f"\n[dim]GDP data points: {len(d.get('gdp', []))} | "
-            f"Recent conflict events: {d.get('recent_events', 0)}[/dim]"
+            t(
+                "\n[dim]GDP data points: {gdp} | Recent conflict events: {events}[/dim]",
+                gdp=len(d.get("gdp", [])),
+                events=d.get("recent_events", 0),
+            )
         )
 
 
@@ -1082,8 +1176,12 @@ def dossier(ctx: click.Context, country: str) -> None:
 
     overview = data.get("overview", {})
     console.print(
-        f"[bold]Country Dossier: {overview.get('country', country)}[/bold] "
-        f"({overview.get('iso2')}/{overview.get('iso3')})\n"
+        t(
+            "[bold]Country Dossier: {country}[/bold] ({iso2}/{iso3})\n",
+            country=overview.get("country", country),
+            iso2=overview.get("iso2"),
+            iso3=overview.get("iso3"),
+        )
     )
 
     # Economy
@@ -1093,17 +1191,31 @@ def dossier(ctx: click.Context, country: str) -> None:
         if gdp:
             latest = gdp[0]
             console.print(
-                f"[cyan]Economy:[/cyan] GDP {latest.get('year')}: ${latest.get('value', 0) / 1e9:,.1f}B"
+                t(
+                    "[cyan]Economy:[/cyan] GDP {year}: ${gdp:,.1f}B",
+                    year=latest.get("year"),
+                    gdp=latest.get("value", 0) / 1e9,
+                )
             )
         if econ.get("conflict_events_30d"):
-            console.print(f"  Conflict events (30d): {econ['conflict_events_30d']}")
+            console.print(
+                t(
+                    "  Conflict events (30d): {n}",
+                    n=econ["conflict_events_30d"],
+                )
+            )
 
     # Markets
     mkt = data.get("markets", {})
     if "ticker" in mkt:
         q = mkt.get("quote", {})
         console.print(
-            f"[green]Markets:[/green] {mkt['ticker']} = {q.get('price', 'N/A')} ({q.get('change_pct', 'N/A')}%)"
+            t(
+                "[green]Markets:[/green] {ticker} = {price} ({change}%)",
+                ticker=mkt["ticker"],
+                price=q.get("price", "N/A"),
+                change=q.get("change_pct", "N/A"),
+            )
         )
 
     # Elections
@@ -1112,31 +1224,49 @@ def dossier(ctx: click.Context, country: str) -> None:
     if upcoming:
         next_e = upcoming[0]
         console.print(
-            f"[yellow]Elections:[/yellow] {escape(str(next_e.get('election_type')))} "
-            f"on {next_e.get('date')} (risk: {next_e.get('risk_score', 0):.0f})"
+            t(
+                "[yellow]Elections:[/yellow] {etype} on {date} (risk: {risk:.0f})",
+                etype=escape(str(next_e.get("election_type"))),
+                date=next_e.get("date"),
+                risk=next_e.get("risk_score", 0),
+            )
         )
 
     # Sanctions
     sanc = data.get("sanctions", {})
     if sanc.get("match_count", 0) > 0:
-        console.print(f"[red]Sanctions:[/red] {sanc['match_count']} OFAC matches")
+        console.print(
+            t(
+                "[red]Sanctions:[/red] {n} OFAC matches",
+                n=sanc["match_count"],
+            )
+        )
 
     # News
     news = data.get("news", {})
-    console.print(f"[blue]News:[/blue] {news.get('mention_count', 0)} recent mentions")
+    console.print(
+        t(
+            "[blue]News:[/blue] {n} recent mentions",
+            n=news.get("mention_count", 0),
+        )
+    )
     for art in news.get("mentions", [])[:3]:
         console.print(f"  - {escape(art.get('title', 'N/A')[:80])}")
 
     # Security
     sec = data.get("security", {})
     if sec.get("hotspot_count", 0):
-        console.print(f"[red]Hotspots:[/red] {sec['hotspot_count']} associated")
+        console.print(
+            t("[red]Hotspots:[/red] {n} associated", n=sec["hotspot_count"])
+        )
     if sec.get("conflict_count", 0):
-        console.print(f"[red]Conflicts:[/red] {sec['conflict_count']} active")
+        console.print(
+            t("[red]Conflicts:[/red] {n} active", n=sec["conflict_count"])
+        )
 
     br = overview.get("baseline_risk")
     if br is not None:
-        console.print(f"\n[dim]Baseline risk: {br}/100[/dim]")
+        console.print(t("\n[dim]Baseline risk: {risk}/100[/dim]", risk=br))
 
 
 @main.command()
@@ -1150,7 +1280,7 @@ def risk(ctx: click.Context, limit: int) -> None:
     if _bail_on_error(ctx, data):
         return
 
-    table = Table(title="Country Risk Scores", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Country Risk Scores", box=box.SIMPLE_HEAVY)
     table.add_column("#", justify="right")
     table.add_column("Country", style="bold")
     table.add_column("Events (30d)", justify="right")
@@ -1193,14 +1323,19 @@ def instability(ctx: click.Context, country_code: str | None) -> None:
         idx = data.get("instability_index", 0)
         level = data.get("risk_level", "")
         console.print(
-            f"[bold]{country_code} Instability Index: {idx}/100 ({level})[/bold]\n"
+            t(
+                "[bold]{country} Instability Index: {idx}/100 ({level})[/bold]\n",
+                country=country_code,
+                idx=idx,
+                level=level,
+            )
         )
         components = data.get("components", {})
         for name, score in components.items():
             bar = "█" * int(score) + "░" * (20 - int(score))
             console.print(f"  {name:30s} {bar} {score:.1f}/20")
     else:
-        table = Table(title="Instability Index (Focus Countries)", box=box.SIMPLE_HEAVY)
+        table = _Table(title="Instability Index (Focus Countries)", box=box.SIMPLE_HEAVY)
         table.add_column("Country", style="bold")
         table.add_column("Index", justify="right")
         table.add_column("Events (30d)", justify="right")
@@ -1243,39 +1378,47 @@ def btc(ctx: click.Context) -> None:
     if _bail_on_error(ctx, data):
         return
 
-    console.print(f"[bold]BTC Technicals[/bold]  price: ${data.get('price', 0):,.2f}\n")
-    table = Table(box=box.SIMPLE_HEAVY)
+    console.print(
+        t(
+            "[bold]BTC Technicals[/bold]  price: ${price:,.2f}\n",
+            price=data.get("price", 0),
+        )
+    )
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Indicator", style="bold")
     table.add_column("Value", justify="right")
 
-    table.add_row("SMA-50", f"${data.get('sma_50', 0):,.2f}")
+    table.add_row(t("SMA-50"), f"${data.get('sma_50', 0):,.2f}")
     table.add_row(
-        "SMA-200", f"${data.get('sma_200', 0):,.2f}" if data.get("sma_200") else "N/A"
+        t("SMA-200"),
+        f"${data.get('sma_200', 0):,.2f}" if data.get("sma_200") else t("N/A"),
     )
     table.add_row(
-        "Mayer Multiple",
-        f"{data.get('mayer_multiple', 0):.4f}" if data.get("mayer_multiple") else "N/A",
+        t("Mayer Multiple"),
+        f"{data.get('mayer_multiple', 0):.4f}"
+        if data.get("mayer_multiple")
+        else t("N/A"),
     )
     cross = data.get("cross_signal", "neutral")
     c_style = (
         "green" if cross == "golden_cross" else "red" if cross == "death_cross" else ""
     )
     table.add_row(
-        "Cross Signal",
+        t("Cross Signal"),
         f"[{c_style}]{escape(str(cross))}[/{c_style}]" if c_style else _cell(cross),
     )
-    table.add_row("ATH Distance", f"{data.get('ath_distance_pct', 0):.1f}%")
+    table.add_row(t("ATH Distance"), f"{data.get('ath_distance_pct', 0):.1f}%")
     table.add_row(
-        "7d Change",
+        t("7d Change"),
         f"{data.get('change_7d_pct', 0):+.2f}%"
         if data.get("change_7d_pct") is not None
-        else "N/A",
+        else t("N/A"),
     )
     table.add_row(
-        "30d Change",
+        t("30d Change"),
         f"{data.get('change_30d_pct', 0):+.2f}%"
         if data.get("change_30d_pct") is not None
-        else "N/A",
+        else t("N/A"),
     )
     console.print(table)
 
@@ -1293,11 +1436,17 @@ def central_banks_cmd(ctx: click.Context) -> None:
     fred_tag = (
         "[green]FRED[/green]"
         if data.get("fred_available")
-        else "[yellow]curated[/yellow]"
+        else f"[yellow]{t('curated')}[/yellow]"
     )
-    console.print(f"[bold]{data.get('count', 0)} Central Banks[/bold] ({fred_tag})\n")
+    console.print(
+        t(
+            "[bold]{count} Central Banks[/bold] ({tag})\n",
+            count=data.get("count", 0),
+            tag=fred_tag,
+        )
+    )
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Bank", style="bold")
     table.add_column("Country")
     table.add_column("Rate %", justify="right")
@@ -1335,11 +1484,14 @@ def shipping_cmd(ctx: click.Context) -> None:
         return
 
     console.print(
-        f"[bold]Shipping Stress: {data.get('assessment', '?')}[/bold] "
-        f"(score: {data.get('stress_score', 0):.0f}/100)\n"
+        t(
+            "[bold]Shipping Stress: {assessment}[/bold] (score: {score:.0f}/100)\n",
+            assessment=data.get("assessment", "?"),
+            score=data.get("stress_score", 0),
+        )
     )
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Symbol", style="bold")
     table.add_column("Price", justify="right")
     table.add_column("Change %", justify="right")
@@ -1372,8 +1524,11 @@ def social_cmd(ctx: click.Context) -> None:
 
     metrics = data.get("velocity_metrics", {})
     console.print(
-        f"[bold]Social Signals[/bold] — {metrics.get('total_posts', 0)} posts, "
-        f"{metrics.get('high_engagement_count', 0)} high engagement\n"
+        t(
+            "[bold]Social Signals[/bold] — {posts} posts, {high} high engagement\n",
+            posts=metrics.get("total_posts", 0),
+            high=metrics.get("high_engagement_count", 0),
+        )
     )
 
     for post in data.get("top_posts", [])[:15]:
@@ -1398,12 +1553,15 @@ def disease_cmd(ctx: click.Context) -> None:
         return
 
     console.print(
-        f"[bold]{data.get('count', 0)} outbreak reports[/bold] "
-        f"([red]{data.get('high_concern_count', 0)} high concern[/red])\n"
+        t(
+            "[bold]{count} outbreak reports[/bold] ([red]{high} high concern[/red])\n",
+            count=data.get("count", 0),
+            high=data.get("high_concern_count", 0),
+        )
     )
 
     for item in data.get("items", [])[:20]:
-        hc = "[red]HC[/red] " if item.get("is_high_concern") else "    "
+        hc = f"[red]{t('HC')}[/red] " if item.get("is_high_concern") else "    "
         title = escape(item.get("title", "")[:80])
         feed = escape(item.get("feed_name", ""))
         console.print(f"  {hc}{title}  [dim]({feed})[/dim]")
@@ -1420,7 +1578,7 @@ def elections_cmd(ctx: click.Context, country: str | None) -> None:
     if _bail_on_error(ctx, data):
         return
 
-    table = Table(title="Election Calendar", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Election Calendar", box=box.SIMPLE_HEAVY)
     table.add_column("Date", style="bold")
     table.add_column("Country")
     table.add_column("Type")
@@ -1458,8 +1616,13 @@ def nuclear_cmd(ctx: click.Context, hours: int) -> None:
         return
 
     console.print(
-        f"[bold]{data.get('total_flagged_events', 0)} flagged events[/bold] "
-        f"([red]{data.get('critical_flags', 0)} critical[/red]) in last {hours}h\n"
+        t(
+            "[bold]{flagged} flagged events[/bold] "
+            "([red]{critical} critical[/red]) in last {hours}h\n",
+            flagged=data.get("total_flagged_events", 0),
+            critical=data.get("critical_flags", 0),
+            hours=hours,
+        )
     )
 
     for site in data.get("sites", []):
@@ -1467,7 +1630,14 @@ def nuclear_cmd(ctx: click.Context, hours: int) -> None:
         events = site.get("events", [])
         count = len(events)
         style = "red bold" if count > 0 else "dim"
-        console.print(f"  [{style}]{n}: {count} events[/{style}]")
+        console.print(
+            t(
+                "  [{style}]{name}: {count} events[/{style}]",
+                style=style,
+                name=n,
+                count=count,
+            )
+        )
 
 
 @main.command(name="space")
@@ -1480,20 +1650,20 @@ def space_cmd(ctx: click.Context) -> None:
     if _bail_on_error(ctx, data):
         return
 
-    table = Table(title="Space Weather", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Space Weather", box=box.SIMPLE_HEAVY)
     table.add_column("Metric", style="bold")
     table.add_column("Value", justify="right")
 
-    for key in (
-        "k_index",
-        "solar_wind_speed_km_s",
-        "solar_wind_density",
-        "bz_gsm_nt",
-        "flux_10_7",
+    for key, key_label in (
+        ("k_index", t("K Index")),
+        ("solar_wind_speed_km_s", t("Solar Wind Speed Km S")),
+        ("solar_wind_density", t("Solar Wind Density")),
+        ("bz_gsm_nt", t("Bz Gsm Nt")),
+        ("flux_10_7", t("Flux 10 7")),
     ):
         val = data.get(key)
         if val is not None:
-            table.add_row(key.replace("_", " ").title(), _cell(val))
+            table.add_row(key_label, _cell(val))
     console.print(table)
 
 
@@ -1510,8 +1680,12 @@ def sanctions_cmd(ctx: click.Context, query: str, country: str | None) -> None:
         return
 
     console.print(
-        f"[bold]{data.get('count', 0)} matches[/bold] for '{query}' "
-        f"(from {data.get('total_entities', 0)} total)\n"
+        t(
+            "[bold]{count} matches[/bold] for '{query}' (from {total} total)\n",
+            count=data.get("count", 0),
+            query=query,
+            total=data.get("total_entities", 0),
+        )
     )
 
     for m in data.get("matches", [])[:20]:
@@ -1531,7 +1705,12 @@ def ai_watch_cmd(ctx: click.Context) -> None:
     if _bail_on_error(ctx, data):
         return
 
-    console.print(f"[bold]AI Watch[/bold] — {data.get('total_items', 0)} items\n")
+    console.print(
+        t(
+            "[bold]AI Watch[/bold] — {n} items\n",
+            n=data.get("total_items", 0),
+        )
+    )
     for item in data.get("items", [])[:20]:
         title = escape(item.get("title", "")[:80])
         src = escape(f"[{item.get('source', '')}]")
@@ -1553,24 +1732,38 @@ def fleet_cmd(ctx: click.Context) -> None:
     if _bail_on_error(ctx, data):
         return
 
-    console.print(f"[bold]{escape(data.get('report_title', 'Fleet Report'))}[/bold]\n")
+    console.print(
+        f"[bold]{escape(data.get('report_title', t('Fleet Report')))}[/bold]\n"
+    )
 
     totals = data.get("force_totals", {})
     if totals.get("battle_force"):
         bf = totals["battle_force"]
         console.print(
-            f"  Battle Force: {bf.get('total', 0)} ships ({bf.get('uss', 0)} USS, {bf.get('usns', 0)} USNS)"
+            t(
+                "  Battle Force: {total} ships ({uss} USS, {usns} USNS)",
+                total=bf.get("total", 0),
+                uss=bf.get("uss", 0),
+                usns=bf.get("usns", 0),
+            )
         )
     if totals.get("deployed"):
         dp = totals["deployed"]
         console.print(
-            f"  Deployed: {dp.get('total', 0)} ({dp.get('uss', 0)} USS, {dp.get('usns', 0)} USNS)"
+            t(
+                "  Deployed: {total} ({uss} USS, {usns} USNS)",
+                total=dp.get("total", 0),
+                uss=dp.get("uss", 0),
+                usns=dp.get("usns", 0),
+            )
         )
 
     ships = data.get("ships", [])
     if ships:
-        console.print(f"\n  [bold]{len(ships)} ships identified[/bold]")
-        table = Table(box=box.SIMPLE_HEAVY)
+        console.print(
+            t("\n  [bold]{n} ships identified[/bold]", n=len(ships))
+        )
+        table = _Table(box=box.SIMPLE_HEAVY)
         table.add_column("Ship", style="bold")
         table.add_column("Hull")
         table.add_column("Type")
@@ -1656,7 +1849,7 @@ def spending_cmd(ctx: click.Context, limit: int) -> None:
     if _bail_on_error(ctx, data):
         return
 
-    table = Table(title="Federal Agencies by Budget", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Federal Agencies by Budget", box=box.SIMPLE_HEAVY)
     table.add_column("Agency", style="bold")
     table.add_column("Budget Auth", justify="right")
     table.add_column("Obligated", justify="right")
@@ -1689,9 +1882,13 @@ def bases_cmd(ctx: click.Context, operator: str | None, country: str | None) -> 
         return
 
     console.print(
-        f"[bold]{data.get('count', 0)} bases[/bold] (of {data.get('total_in_database', 0)})\n"
+        t(
+            "[bold]{count} bases[/bold] (of {total})\n",
+            count=data.get("count", 0),
+            total=data.get("total_in_database", 0),
+        )
     )
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Name", style="bold")
     table.add_column("Operator")
     table.add_column("Country")
@@ -1723,11 +1920,14 @@ def exchanges_cmd(ctx: click.Context, tier: str | None, country: str | None) -> 
         return
 
     console.print(
-        f"[bold]{data.get('count', 0)} exchanges[/bold] "
-        f"(${data.get('total_market_cap_usd_t', 0):.1f}T total market cap)\n"
+        t(
+            "[bold]{count} exchanges[/bold] (${cap:.1f}T total market cap)\n",
+            count=data.get("count", 0),
+            cap=data.get("total_market_cap_usd_t", 0),
+        )
     )
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Exchange", style="bold")
     table.add_column("Country")
     table.add_column("Tier")
@@ -1761,11 +1961,15 @@ def traffic(ctx: click.Context) -> None:
         return
 
     console.print(
-        f"[bold]Global Traffic[/bold] — {data.get('count', 0)} cities, "
-        f"avg congestion {data.get('global_avg_congestion', 0):.0f}%\n"
+        t(
+            "[bold]Global Traffic[/bold] — {count} cities, "
+            "avg congestion {avg:.0f}%\n",
+            count=data.get("count", 0),
+            avg=data.get("global_avg_congestion", 0),
+        )
     )
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("City", style="bold")
     table.add_column("Country")
     table.add_column("Congestion %", justify="right")
@@ -1796,11 +2000,14 @@ def incidents(ctx: click.Context) -> None:
         return
 
     console.print(
-        f"[bold]Traffic Incidents[/bold] — {data.get('total_count', 0)} across "
-        f"{data.get('regions_checked', 0)} regions\n"
+        t(
+            "[bold]Traffic Incidents[/bold] — {total} across {regions} regions\n",
+            total=data.get("total_count", 0),
+            regions=data.get("regions_checked", 0),
+        )
     )
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Region")
     table.add_column("Description", max_width=40)
     table.add_column("Delay (min)", justify="right")
@@ -1828,10 +2035,13 @@ def air_traffic_cmd(ctx: click.Context) -> None:
         return
 
     console.print(
-        f"[bold]Air Traffic[/bold] — {data.get('total_aircraft', 0)} airborne\n"
+        t(
+            "[bold]Air Traffic[/bold] — {n} airborne\n",
+            n=data.get("total_aircraft", 0),
+        )
     )
 
-    table = Table(box=box.SIMPLE_HEAVY, title="By Region")
+    table = _Table(box=box.SIMPLE_HEAVY, title="By Region")
     table.add_column("Region", style="bold")
     table.add_column("Count", justify="right")
     table.add_column("Commercial", justify="right")
@@ -1846,7 +2056,7 @@ def air_traffic_cmd(ctx: click.Context) -> None:
     console.print(table)
 
     if data.get("busiest_origins"):
-        console.print("\n[bold]Busiest Origins:[/bold]")
+        console.print(t("\n[bold]Busiest Origins:[/bold]"))
         for o in data["busiest_origins"][:10]:
             console.print(f"  {escape(str(o['country']))}: {o['count']}")
 
@@ -1866,10 +2076,14 @@ def webcams_cmd(ctx: click.Context, category: str, limit: int) -> None:
         return
 
     console.print(
-        f"[bold]Webcams[/bold] — {data.get('count', 0)} cameras ({category})\n"
+        t(
+            "[bold]Webcams[/bold] — {count} cameras ({category})\n",
+            count=data.get("count", 0),
+            category=category,
+        )
     )
 
-    table = Table(box=box.SIMPLE_HEAVY)
+    table = _Table(box=box.SIMPLE_HEAVY)
     table.add_column("Title", style="bold", max_width=30)
     table.add_column("City")
     table.add_column("Country")
@@ -1902,17 +2116,20 @@ def status(ctx: click.Context) -> None:
         _print_json({"circuit_breakers": breaker_status, "cache": cache_stats})
         return
 
-    console.print(Panel("[bold]World Intelligence Status[/bold]"))
+    console.print(Panel(f"[bold]{t('World Intelligence Status')}[/bold]"))
 
     # Cache
     console.print(
-        f"\n[bold]Cache:[/bold] {cache_stats.get('active_entries', 0)} active, "
-        f"{cache_stats.get('expired_entries', 0)} expired"
+        t(
+            "\n[bold]Cache:[/bold] {active} active, {expired} expired",
+            active=cache_stats.get("active_entries", 0),
+            expired=cache_stats.get("expired_entries", 0),
+        )
     )
 
     # Circuit breakers
     if breaker_status:
-        table = Table(title="Circuit Breakers", box=box.SIMPLE_HEAVY)
+        table = _Table(title="Circuit Breakers", box=box.SIMPLE_HEAVY)
         table.add_column("Source", style="bold")
         table.add_column("Status")
         table.add_column("Failures", justify="right")
@@ -1933,7 +2150,9 @@ def status(ctx: click.Context) -> None:
             )
         console.print(table)
     else:
-        console.print("\n[dim]No circuit breaker data yet (no requests made)[/dim]")
+        console.print(
+            t("\n[dim]No circuit breaker data yet (no requests made)[/dim]")
+        )
 
 
 @main.command(name="sync")
@@ -1945,14 +2164,18 @@ def sync_cmd(source: str | None) -> None:
         # Delete all cache entries matching this source prefix
         # Simple approach: evict expired, then note we can't selectively clear yet
         console.print(
-            f"[yellow]Force sync not yet implemented for specific source '{source}'[/yellow]"
+            t(
+                "[yellow]Force sync not yet implemented for specific source "
+                "'{source}'[/yellow]",
+                source=source,
+            )
         )
         console.print(
-            "[dim]Workaround: cache entries expire naturally based on TTL[/dim]"
+            t("[dim]Workaround: cache entries expire naturally based on TTL[/dim]")
         )
     else:
         removed = f.cache.evict_expired()
-        console.print(f"Evicted {removed} expired cache entries")
+        console.print(t("Evicted {n} expired cache entries", n=removed))
 
 
 @main.command()
@@ -1963,7 +2186,11 @@ def dashboard(port: int, host: str) -> None:
     from .dashboard.app import run as run_dashboard
 
     console.print(
-        f"[bold]Starting Intelligence Dashboard[/bold] on http://{host}:{port}"
+        t(
+            "[bold]Starting Intelligence Dashboard[/bold] on http://{host}:{port}",
+            host=host,
+            port=port,
+        )
     )
     run_dashboard(host=host, port=port)
 
@@ -1997,7 +2224,7 @@ def report(
     f = _get_fetcher()
     section_list = [s.strip() for s in sections.split(",")] if sections else None
 
-    with console.status("[bold]Generating report..."):
+    with console.status(f"[bold]{t('Generating report...')}"):
         result = asyncio.run(
             generate_report(
                 f, output_path=output, title=title, sections=section_list, fmt=fmt
@@ -2014,18 +2241,19 @@ def report(
 
     console.print(
         Panel(
-            f"[bold green]Report generated[/bold green]\n\n"
-            f"Path: {result['path']}\n"
-            f"Format: {result['format']}\n"
-            f"Size: {result['size_bytes']:,} bytes\n"
-            f"Sections: {', '.join(result['sections_included'])}\n"
-            f"Time: {result['generation_seconds']}s"
+            f"[bold green]{t('Report generated')}[/bold green]\n\n"
+            f"{t('Path:')} {result['path']}\n"
+            f"{t('Format:')} {result['format']}\n"
+            f"{t('Size:')} {result['size_bytes']:,} {t('bytes')}\n"
+            f"{t('Sections:')} {', '.join(result['sections_included'])}\n"
+            f"{t('Time:')} {result['generation_seconds']}s"
             + (
-                f"\n[yellow]Failed: {', '.join(result['sections_failed'])}[/yellow]"
+                f"\n[yellow]{t('Failed:')} "
+                f"{', '.join(result['sections_failed'])}[/yellow]"
                 if result["sections_failed"]
                 else ""
             ),
-            title="Intelligence Report",
+            title=t("Intelligence Report"),
             border_style="green",
         )
     )
@@ -2061,19 +2289,19 @@ def _parse_latlon_pairs(
     for raw in value:
         parts = raw.split(",")
         if len(parts) != 2:
-            raise click.BadParameter(f"expected LAT,LON (got {raw!r})")
+            raise click.BadParameter(t("expected LAT,LON (got {raw!r})", raw=raw))
         try:
             pairs.append([float(parts[0]), float(parts[1])])
         except ValueError:
             raise click.BadParameter(
-                f"expected numeric LAT,LON (got {raw!r})"
+                t("expected numeric LAT,LON (got {raw!r})", raw=raw)
             ) from None
     return pairs
 
 
 def _print_data_gaps(data: dict) -> None:
     for gap in data.get("data_gaps", []):
-        console.print(f"[yellow]Gap:[/yellow] {escape(str(gap))}")
+        console.print(f"[yellow]{t('Gap:')}[/yellow] {escape(str(gap))}")
 
 
 @main.group(name="aoi")
@@ -2100,8 +2328,14 @@ def aoi_define(
         return
     a = data["aoi"]
     console.print(
-        f"AOI [bold]{escape(str(a['name']))}[/bold] defined: "
-        f"center {a['lat']}, {a['lon']} (radius {a['radius_km']:g} km)"
+        t(
+            "AOI [bold]{name}[/bold] defined: "
+            "center {lat}, {lon} (radius {radius:g} km)",
+            name=escape(str(a["name"])),
+            lat=a["lat"],
+            lon=a["lon"],
+            radius=a["radius_km"],
+        )
     )
 
 
@@ -2128,9 +2362,16 @@ def aoi_define_polygon(
     a = data["aoi"]
     n_vertices = len((a.get("geometry") or {}).get("vertices", []))
     console.print(
-        f"Polygon AOI [bold]{escape(str(a['name']))}[/bold] defined: "
-        f"{n_vertices} vertices, bounding radius {a['radius_km']:.0f} km "
-        f"around {a['lat']:.4f}, {a['lon']:.4f}"
+        t(
+            "Polygon AOI [bold]{name}[/bold] defined: "
+            "{n} vertices, bounding radius {radius:.0f} km "
+            "around {lat:.4f}, {lon:.4f}",
+            name=escape(str(a["name"])),
+            n=n_vertices,
+            radius=a["radius_km"],
+            lat=a["lat"],
+            lon=a["lon"],
+        )
     )
 
 
@@ -2160,10 +2401,14 @@ def aoi_define_corridor(
     a = data["aoi"]
     geometry = a.get("geometry") or {}
     console.print(
-        f"Corridor AOI [bold]{escape(str(a['name']))}[/bold] defined: "
-        f"{len(geometry.get('waypoints', []))} waypoints, width "
-        f"{geometry.get('width_km', width_km):g} km, bounding radius "
-        f"{a['radius_km']:.0f} km"
+        t(
+            "Corridor AOI [bold]{name}[/bold] defined: "
+            "{n} waypoints, width {width:g} km, bounding radius {radius:.0f} km",
+            name=escape(str(a["name"])),
+            n=len(geometry.get("waypoints", [])),
+            width=geometry.get("width_km", width_km),
+            radius=a["radius_km"],
+        )
     )
 
 
@@ -2177,10 +2422,10 @@ def aoi_list_cmd(ctx: click.Context) -> None:
 
     aois = data.get("aois", [])
     if not aois:
-        console.print("[yellow]No AOIs defined[/yellow]")
+        console.print(f"[yellow]{t('No AOIs defined')}[/yellow]")
         return
 
-    table = Table(title=f"Areas of Interest ({len(aois)})", box=box.SIMPLE_HEAVY)
+    table = _Table(title=t("Areas of Interest ({n})", n=len(aois)), box=box.SIMPLE_HEAVY)
     table.add_column("Name", style="bold")
     table.add_column("Kind")
     table.add_column("Center", justify="right")
@@ -2229,13 +2474,21 @@ def aoi_update(
         return
     a = data["aoi"]
     console.print(
-        f"AOI [bold]{escape(str(a['name']))}[/bold] updated: "
-        f"center {a['lat']}, {a['lon']} (radius {a['radius_km']:g} km)"
+        t(
+            "AOI [bold]{name}[/bold] updated: "
+            "center {lat}, {lon} (radius {radius:g} km)",
+            name=escape(str(a["name"])),
+            lat=a["lat"],
+            lon=a["lon"],
+            radius=a["radius_km"],
+        )
     )
     if data.get("snapshot_dropped"):
         console.print(
-            "[yellow]Change-detection baseline dropped (geometry changed); "
-            "the next 'intel aoi changes' sweep re-baselines.[/yellow]"
+            t(
+                "[yellow]Change-detection baseline dropped (geometry changed); "
+                "the next 'intel aoi changes' sweep re-baselines.[/yellow]"
+            )
         )
 
 
@@ -2247,7 +2500,12 @@ def aoi_delete(ctx: click.Context, name: str) -> None:
     data = aoi_analysis.delete_aoi(_get_aoi_store(), name=name)
     if _bail_on_error(ctx, data):
         return
-    console.print(f"Deleted AOI [bold]{escape(str(data.get('deleted', name)))}[/bold]")
+    console.print(
+        t(
+            "Deleted AOI [bold]{name}[/bold]",
+            name=escape(str(data.get("deleted", name))),
+        )
+    )
 
 
 @aoi_group.command(name="brief")
@@ -2290,17 +2548,21 @@ def aoi_escalation(ctx: click.Context, name: str) -> None:
         else escape(str(level))
     )
     console.print(
-        f"[bold]{escape(str(a.get('name', name)))}[/bold] escalation: "
-        f"{data.get('score', 0)}/100 ({level_str}, "
-        f"trend {escape(str(data.get('trend_signal', '')))})"
+        t(
+            "[bold]{name}[/bold] escalation: {score}/100 ({level}, trend {trend})",
+            name=escape(str(a.get("name", name))),
+            score=data.get("score", 0),
+            level=level_str,
+            trend=escape(str(data.get("trend_signal", ""))),
+        )
     )
 
-    table = Table(title="Components", box=box.SIMPLE_HEAVY)
+    table = _Table(title="Components", box=box.SIMPLE_HEAVY)
     table.add_column("Component", style="bold")
     table.add_column("Points", justify="right")
     for comp, points in data.get("components", {}).items():
         if points is None:
-            table.add_row(_cell(comp), "[dim]not measured[/dim]")
+            table.add_row(_cell(comp), f"[dim]{t('not measured')}[/dim]")
         else:
             table.add_row(_cell(comp), f"{points:.1f}")
     console.print(table)
@@ -2322,10 +2584,13 @@ def aoi_changes(ctx: click.Context, name: str) -> None:
     changes = data.get("changes", {})
     if data.get("baseline"):
         console.print(
-            f"Baseline established for [bold]{escape(str(a.get('name', name)))}[/bold]"
-            ": nothing is claimed to have entered or left; run again to diff."
+            t(
+                "Baseline established for [bold]{name}[/bold]"
+                ": nothing is claimed to have entered or left; run again to diff.",
+                name=escape(str(a.get("name", name))),
+            )
         )
-        table = Table(title="Baseline Observations", box=box.SIMPLE_HEAVY)
+        table = _Table(title="Baseline Observations", box=box.SIMPLE_HEAVY)
         table.add_column("Domain", style="bold")
         table.add_column("Observed", justify="right")
         for domain, info in changes.items():
@@ -2336,10 +2601,12 @@ def aoi_changes(ctx: click.Context, name: str) -> None:
 
     prev = data.get("previous_taken_at")
     if prev:
-        console.print(f"[dim]Previous sweep: {escape(str(prev))}[/dim]")
+        console.print(
+            t("[dim]Previous sweep: {prev}[/dim]", prev=escape(str(prev)))
+        )
 
-    table = Table(
-        title=f"AOI Changes — {escape(str(a.get('name', name)))}",
+    table = _Table(
+        title=t("AOI Changes — {name}", name=escape(str(a.get("name", name)))),
         box=box.SIMPLE_HEAVY,
     )
     table.add_column("Domain", style="bold")
@@ -2351,8 +2618,8 @@ def aoi_changes(ctx: click.Context, name: str) -> None:
             # A domain first seen this sweep: a baseline, not churn.
             table.add_row(
                 _cell(domain),
-                "[dim]baseline[/dim]",
-                "[dim]baseline[/dim]",
+                f"[dim]{t('baseline')}[/dim]",
+                f"[dim]{t('baseline')}[/dim]",
                 str(info.get("unchanged", 0)),
             )
         else:
@@ -2376,6 +2643,61 @@ def aoi_changes(ctx: click.Context, name: str) -> None:
                 f"{escape(str(item.get('summary', '')))}"
             )
     _print_data_gaps(data)
+
+
+def _localize_commands(group: click.Group) -> None:
+    """Translate command/option help in place (Click reads docstrings once).
+
+    The English original is kept on ``_wi_help_en`` so tests (and a second
+    call) always see the msgid, never an already-translated string.
+    """
+    for cmd in group.commands.values():
+        if cmd.help:
+            cmd.help = t(cmd.__dict__.setdefault("_wi_help_en", cmd.help))
+        if cmd.short_help:
+            cmd.short_help = t(
+                cmd.__dict__.setdefault("_wi_short_help_en", cmd.short_help)
+            )
+        for param in cmd.params:
+            if getattr(param, "help", None):
+                param.help = t(param.__dict__.setdefault("_wi_help_en", param.help))
+        if isinstance(cmd, click.Group):
+            _localize_commands(cmd)
+
+
+def _install_click_translations() -> None:
+    """Route Click's own gettext strings ("Usage:", "Options:" ...) through t().
+
+    Every click.* module does ``from gettext import gettext as _`` and looks
+    ``_`` up as a module global at call time, so rebinding the global works.
+    Scanning sys.modules (instead of a fixed module list) keeps this working
+    across Click versions that move code between modules.
+    """
+    import gettext
+    import sys
+
+    for name, mod in list(sys.modules.items()):
+        if not (name == "click" or name.startswith("click.")) or mod is None:
+            continue
+        original = getattr(mod, "_", None)
+        if original is not gettext.gettext:
+            continue
+
+        def _wrap(message, _orig=original, **kw):
+            translated = t(message)
+            return translated if translated != message else _orig(message, **kw)
+
+        mod._ = _wrap  # type: ignore[attr-defined]
+
+
+if get_locale() != "en":
+    _install_click_translations()
+    main.__dict__.setdefault("_wi_help_en", main.help)
+    main.help = t(main.help or "")
+    for _p in main.params:
+        if getattr(_p, "help", None):
+            _p.help = t(_p.__dict__.setdefault("_wi_help_en", _p.help))
+    _localize_commands(main)
 
 
 if __name__ == "__main__":
