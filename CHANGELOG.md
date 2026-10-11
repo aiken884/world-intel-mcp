@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- zh-TW locale, now the default. Set `WORLD_INTEL_LANG=en` or pass
+  `world-intel --lang en` to switch back to English. Covers the `intel`
+  CLI, the dashboard, and the fixed text of reports, daily digests, and
+  situation briefs. External API data, MCP tool names and descriptions,
+  and JSON keys are not translated.
+- `world-intel` single entry point with `mcp`, `cli`, `dashboard`, and
+  `collector` subcommands. `--lang` must come before the subcommand.
+- `scripts/build-macos.sh`: PyInstaller onedir build producing
+  `dist/world-intel/world-intel` (Apple Silicon arm64). The executable is
+  unsigned and not notarized.
+
 ## 0.10.0 - 2026-09-02
 
 Geofences become visible and their news becomes geographic: the

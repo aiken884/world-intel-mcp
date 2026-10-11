@@ -92,6 +92,18 @@ Only these unlock additional data sources (everything else works unauthenticated
 - `OLLAMA_API_URL` / `OLLAMA_MODEL`: Ollama server and model for AI-generated briefs (default `http://localhost:11434` / `llama3.2`)
 - `WORLD_INTEL_AOI_WEBHOOK` / `WORLD_INTEL_AOI_WEBHOOK_FORMAT` — AOI sweep change notifications (collector daemon): POST on non-quiet sweeps; format `json` (default) or `text` (raw markdown + `Title` header for ntfy-style sinks). Delivery record in the digest's `notification` field; a dead sink never fails the sweep.
 
+## Localization
+
+使用者可見的固定文字（CLI 說明與訊息、儀表板、報告與摘要）必須走 `world_intel_mcp.i18n.t()`：
+
+- msgid 必須是字面英文字串，不可傳變數或 f-string。含變數時用具名 placeholder，例如 `t("{n} items", n=3)`。
+- 新增 `t()` 字串時，要同步補上 `src/world_intel_mcp/locales/zh_TW.py` 的對應段（CLI／REPORTS／DASHBOARD）。`tests/test_i18n_catalog.py` 會擋漏翻、placeholder 不一致與簡體字。
+- 儀表板 JS 使用 `_t('msgid', {var: value})`。文字節點內容與 msgid 完全相符的標籤，由 DOM 翻譯器自動處理，不需另外包 `_t()`。
+- 用語依 `src/world_intel_mcp/locales/GLOSSARY.md`。
+- 不要在 import 期呼叫 `t()`（Click 說明文字的後處理除外）。
+- 不要用變數名 `t` 當迴圈變數或其他名稱，會遮蔽翻譯函式。
+- 測試預設釘在英文（`WORLD_INTEL_LANG=en`）。要驗證中文的測試，需自行 `monkeypatch.setenv("WORLD_INTEL_LANG", "zh-TW")`。
+
 ## Testing
 
 Tests use `respx` to mock httpx responses. Fixtures in `conftest.py` provide `cache` (tmp_path SQLite) and `fetcher` (with clean breaker). Tests are async (`pytest-asyncio` in auto mode). Proxy env vars are stripped automatically.

@@ -132,6 +132,62 @@ intel status               # cache + circuit breaker health
 
 ---
 
+## 語系（Language）
+
+預設語系為台灣繁體中文（`zh-TW`）。要切回英文，可設定環境變數或在指令加旗標：
+
+```bash
+export WORLD_INTEL_LANG=en           # 環境變數
+world-intel --lang en cli markets    # 單次指定；--lang 只能放在子指令之前
+```
+
+- 接受值為 `zh-TW` 與 `en`；其他值或空值一律回退為 `zh-TW`。
+- 翻譯範圍：`intel` CLI（指令說明、表格欄名、訊息）、網頁儀表板，以及報告、每日摘要、情勢簡報的固定文字。情勢簡報使用 Ollama 時，zh-TW 會要求模型以台灣繁體中文輸出。
+- 不翻譯：外部 API 回傳的資料（例如新聞標題）、MCP 工具名稱／說明／參數、JSON 輸出的鍵名、stderr 的 logger 訊息，以及儀表板與 collector 的 argparse 說明。
+
+## macOS 執行檔
+
+可把 MCP 伺服器、CLI、儀表板與 collector 打包成單一 macOS 執行檔（PyInstaller onedir），不需要在目標機器上維護 Python 環境。
+
+```bash
+scripts/build-macos.sh   # 需要 uv；在 .venv-build/ 以 Python 3.12 建置
+```
+
+產物為 `dist/world-intel/world-intel`（約 34 MB，Mach-O arm64）。單一入口 `world-intel` 的子指令：
+
+- `mcp`：stdio MCP 伺服器
+- `cli …`：同 `intel`
+- `dashboard`：網頁儀表板
+- `collector`：collector daemon
+
+Claude Code 設定範例（路徑請換成實際的絕對路徑）：
+
+```json
+{
+  "mcpServers": {
+    "world-intel-mcp": {
+      "command": "/絕對路徑/dist/world-intel/world-intel",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+驗收可執行：
+
+```bash
+python3 -I scripts/verify-macos-build.py --exe dist/world-intel/world-intel --expected-tools <工具名稱 JSON>
+```
+
+限制：
+
+- 只對應建置機架構（Apple Silicon arm64）。
+- 未簽署、未公證。本機自建自用不受 Gatekeeper 影響；若要傳給他人，需另行簽署。
+- 不含 `[vector]`（fastembed／Qdrant）與 `[pdf]`（WeasyPrint）功能；`intel report --format html` 仍可用。
+- 凍結版儀表板會讀取執行檔旁的 `dist/world-intel/.env`，不會讀取專案根目錄的 `.env`。金鑰請放在該處，或以環境變數提供。
+
+---
+
 ## Architecture
 
 ```
