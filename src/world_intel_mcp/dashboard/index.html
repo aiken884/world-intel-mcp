@@ -1515,7 +1515,12 @@ document.addEventListener('click', function(e) {
     if (href.startsWith('http://') || href.startsWith('https://') || a.hasAttribute('data-external')) {
         e.preventDefault();
         e.stopPropagation();
-        window.open(href, '_blank', 'noopener,noreferrer');
+        // Inside the macOS .app (pywebview) _blank is a no-op: hand the URL to the OS browser.
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.open_url) {
+            window.pywebview.api.open_url(href);
+        } else {
+            window.open(href, '_blank', 'noopener,noreferrer');
+        }
     }
 });
 

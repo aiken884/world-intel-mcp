@@ -332,3 +332,66 @@ def test_dashboard_javascript_has_valid_syntax(tmp_path):
         [NODE, "--check", str(f)], capture_output=True, text=True, timeout=30, check=False
     )
     assert proc.returncode == 0, proc.stderr[-1500:]
+
+
+# ── external links inside the pywebview (macOS .app) window ─────────────────
+
+
+def _link_interceptor_script(api_decl: str, href: str) -> str:
+    """Run the global link interceptor under a fake document/window."""
+    handler = _slice(
+        "// ════════════ GLOBAL LINK INTERCEPTOR ════════════",
+        "// ════════════ KEYBOARD SHORTCUTS ════════════",
+    )
+    return (
+        "const vm = require('vm');\n"
+        f"const SRC = {json.dumps(handler)};\n"
+        + r"""
+const calls = { api: [], open: [], prevented: 0, stopped: 0 };
+let listener = null;
+global.document = { addEventListener: (ev, fn) => { if (ev === 'click') listener = fn; } };
+global.window = { open: (u, t, f) => calls.open.push([u, t, f]) };
+"""
+        + api_decl
+        + "\nvm.runInThisContext(SRC);\n"
+        + f"const HREF = {json.dumps(href)};\n"
+        + r"""
+const a = {
+    getAttribute: (n) => (n === 'href' ? HREF : null),
+    hasAttribute: (n) => false,
+};
+listener({
+    target: { closest: (s) => (s === 'a[href]' ? a : null) },
+    preventDefault: () => { calls.prevented++; },
+    stopPropagation: () => { calls.stopped++; },
+});
+console.log(JSON.stringify(calls));
+"""
+    )
+
+
+def test_external_link_uses_pywebview_api_when_present(tmp_path):
+    api = "global.window.pywebview = { api: { open_url: (u) => calls.api.push(u) } };"
+    r = _run(tmp_path, _link_interceptor_script(api, "https://example.com/x"))
+    assert r["api"] == ["https://example.com/x"], r
+    assert r["open"] == [], r
+    assert r["prevented"] == 1, r
+
+
+def test_external_link_falls_back_to_window_open_in_a_normal_browser(tmp_path):
+    r = _run(tmp_path, _link_interceptor_script("", "https://example.com/x"))
+    assert r["api"] == [], r
+    assert r["open"] == [["https://example.com/x", "_blank", "noopener,noreferrer"]], r
+    assert r["prevented"] == 1, r
+
+
+def test_external_link_falls_back_when_pywebview_api_is_not_ready(tmp_path):
+    # pywebview injects window.pywebview before the api methods are bound.
+    r = _run(tmp_path, _link_interceptor_script("global.window.pywebview = {};", "http://example.com"))
+    assert r["api"] == [] and len(r["open"]) == 1, r
+
+
+def test_internal_anchor_is_left_alone(tmp_path):
+    api = "global.window.pywebview = { api: { open_url: (u) => calls.api.push(u) } };"
+    r = _run(tmp_path, _link_interceptor_script(api, "#section"))
+    assert r["api"] == [] and r["open"] == [] and r["prevented"] == 0, r
