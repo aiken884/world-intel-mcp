@@ -439,6 +439,13 @@ CLI: dict[str, str] = {
         '  dashboard  即時網頁儀表板（預設 http://127.0.0.1:8501）\n'
         '  collector  背景資料收集器'
     ),
+    '--lang requires a value: --lang zh-TW|en': '--lang 需要指定值：--lang zh-TW|en',
+    'Unsupported --lang value {value!r}; using zh-TW. Use --lang zh-TW|en.': (
+        '不支援的 --lang 值 {value!r}，改用 zh-TW。請使用 --lang zh-TW|en。'
+    ),
+    'Unsupported WORLD_INTEL_LANG value {value!r}; using zh-TW. Supported values: zh-TW, en.': (
+        '不支援的 WORLD_INTEL_LANG 值 {value!r}，改用 zh-TW。可用值：zh-TW、en。'
+    ),
 }
 
 # reports.py, daily digest, situation brief.
