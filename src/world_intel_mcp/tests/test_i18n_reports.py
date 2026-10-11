@@ -112,7 +112,9 @@ def test_report_html_is_chinese(monkeypatch) -> None:
     assert "<h2>金融市場</h2>" in html
     assert "無法取得市場資料" in html
     assert "<h2>Executive Summary</h2>" not in html
-    assert "世界情報報告" in html
+    # 帶雙引號才是 CSS `content:` 頁首；<h1> 標題內的「世界情報報告」不會滿足它。
+    assert '"世界情報報告"' in html
+    assert '"WORLD INTELLIGENCE REPORT"' not in html
     assert "PingFang TC" in html  # CJK 字型備援
     assert '"第 " counter(page)' in html
 
@@ -124,6 +126,17 @@ def test_report_html_english_is_unchanged(monkeypatch) -> None:
     assert "<h2>Executive Summary</h2>" in html
     assert '"Page " counter(page) " of " counter(pages)' in html
     assert "PingFang TC" not in html
+
+
+def test_localized_css_replaces_every_swapped_literal_in_the_source_css() -> None:
+    """_localized_css() 以字串取代改寫 _CSS；_CSS 一旦改動而取代對象消失，
+    取代會無聲失效。這裡要求三個原字串都還在，讓改動時測試大聲失敗。"""
+    for literal in (
+        '"Page " counter(page) " of " counter(pages)',
+        '"WORLD INTELLIGENCE REPORT"',
+        "Arial, sans-serif;",
+    ):
+        assert literal in reports._CSS, f"reports._CSS lost {literal!r}"
 
 
 def test_report_table_headers_are_translated(monkeypatch) -> None:
