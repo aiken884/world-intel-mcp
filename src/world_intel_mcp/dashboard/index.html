@@ -982,18 +982,18 @@ function initMap() {
             }
         };
     };
-    mapLayers.quakes = L.layerGroup().addTo(map);
+    mapLayers.quakes = L.featureGroup().addTo(map);
     mapLayers.military = L.markerClusterGroup(clusterOpts('cluster-military', 50)).addTo(map);
     mapLayers.conflict = L.markerClusterGroup(clusterOpts('cluster-conflict', 45)).addTo(map);
     mapLayers.fires = L.markerClusterGroup(clusterOpts('cluster-fire', 45)).addTo(map);
     mapLayers.convergence = L.layerGroup().addTo(map);
-    mapLayers.nuclear = L.layerGroup().addTo(map);
+    mapLayers.nuclear = L.featureGroup().addTo(map);
     mapLayers.infra = L.layerGroup().addTo(map);
-    mapLayers.exposure = L.layerGroup().addTo(map);
+    mapLayers.exposure = L.featureGroup().addTo(map);
     mapLayers.airtraffic = L.markerClusterGroup(clusterOpts(null, 60)).addTo(map);
-    mapLayers.traffic = L.layerGroup().addTo(map);
+    mapLayers.traffic = L.featureGroup().addTo(map);
     mapLayers.navwarnings = L.markerClusterGroup(clusterOpts(null, 40)).addTo(map);
-    mapLayers.webcams = L.layerGroup().addTo(map);
+    mapLayers.webcams = L.featureGroup().addTo(map);
     mapLayers.climate = L.layerGroup().addTo(map);
     mapLayers.news = L.markerClusterGroup(clusterOpts(null, 35)).addTo(map);
     mapLayers.aoi = L.layerGroup().addTo(map);
