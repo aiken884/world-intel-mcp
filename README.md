@@ -75,12 +75,12 @@ Built for AI agents that need world awareness: market conditions, geopolitical r
 ```bash
 git clone https://github.com/marc-shade/world-intel-mcp.git
 cd world-intel-mcp
-pip install -e .
+uv sync --locked
 
 # Optional extras
-pip install -e ".[dashboard]"  # Live ops-center dashboard
-pip install -e ".[vector]"     # Qdrant vector store + FastEmbed
-pip install -e ".[dev]"        # pytest, respx, coverage
+uv sync --locked --extra dashboard  # Live ops-center dashboard
+uv sync --locked --extra vector     # Qdrant vector store + FastEmbed
+uv sync --locked --extra dev        # pytest, respx, coverage
 ```
 
 ### Run as MCP Server
@@ -121,7 +121,7 @@ intel-dashboard --port 9000  # custom port
 ### PDF/HTML Reports
 
 ```bash
-pip install -e ".[pdf]"      # requires: brew install pango (macOS)
+uv sync --locked --extra pdf      # requires: brew install pango (macOS)
 intel report                 # full PDF report → ~/.cache/world-intel-mcp/
 intel report --format html   # HTML (no native deps needed)
 intel report -o brief.pdf    # custom output path
@@ -635,7 +635,7 @@ The optional Qdrant vector store accumulates intelligence over time for semantic
 docker run -p 6333:6333 qdrant/qdrant
 
 # Install vector dependencies
-pip install -e ".[vector]"
+uv sync --locked --extra vector
 
 # Run the collector daemon (populates vector store 24/7)
 intel-collector --daemon              # every 5 minutes
@@ -707,7 +707,7 @@ Everything else uses free, unauthenticated public APIs.
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+uv sync --locked --extra dev
 pytest                       # 900 tests (918 total, 18 live-network smoke tests deselected by default)
 pytest --cov=world_intel_mcp # with coverage
 pytest tests/test_forex.py -v # single module

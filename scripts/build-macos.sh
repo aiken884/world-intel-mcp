@@ -44,7 +44,7 @@ main() {
   trap 'echo "build failed; dist/world-intel/.env backup kept at $ENV_BACKUP_DIR/.env" >&2' ERR
 
   uv venv --clear --python "$PYVER" "$VENV"
-  uv pip install --python "$VENV/bin/python" -e ".[dashboard]" pyinstaller
+  UV_PROJECT_ENVIRONMENT="$VENV" uv sync --locked --python "$PYVER" --extra dashboard --group build
 
   rm -rf "$ROOT/build" "$ROOT/dist/world-intel"
   "$VENV/bin/pyinstaller" \

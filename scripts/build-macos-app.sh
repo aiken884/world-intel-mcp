@@ -46,7 +46,7 @@ main() {
   trap 'echo "app build failed; see the output above (build dir: $WORK)" >&2' ERR
 
   uv venv --clear --python "$PYVER" "$VENV"
-  uv pip install --python "$VENV/bin/python" -e ".[dashboard,gui]" pyinstaller
+  UV_PROJECT_ENVIRONMENT="$VENV" uv sync --locked --python "$PYVER" --extra dashboard --extra gui --group build
 
   # Only our own outputs; dist/world-intel/ (CLI build) is left alone.
   rm -rf "$WORK" "$APP" "$ROOT/dist/$APP_NAME"

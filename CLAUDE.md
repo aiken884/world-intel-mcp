@@ -10,7 +10,7 @@ World Intelligence MCP Server: 128 tools across 30+ domains providing real-time 
 
 ```bash
 # Install
-pip install -e ".[dev,dashboard]"
+uv sync --locked --extra dev --extra dashboard
 
 # Run MCP server (stdio mode)
 world-intel-mcp
@@ -63,7 +63,7 @@ collector.py (daemon)  ──┘
 
 **Collector** (`collector.py`): Standalone daemon for 24/7 vector store population. 51 sources organized by domain, with `--daemon`, `--interval`, `--sources` CLI args. Dynamic import via `_import_fetch_fn()`. Per-source timeout overrides in `SOURCE_TIMEOUTS` (the `aoi_digest` sweep gets 240 s; everything else the flat 45 s). Entry point: `intel-collector`.
 
-**Reports** (`reports.py`): PDF/HTML intelligence report generator. Collects 18 domains in parallel, renders styled HTML, converts to PDF via WeasyPrint. Optional dependency: `pip install -e ".[pdf]"`.
+**Reports** (`reports.py`): PDF/HTML intelligence report generator. Collects 18 domains in parallel, renders styled HTML, converts to PDF via WeasyPrint. Optional dependency: `uv sync --locked --extra pdf`.
 
 **Dashboard** (`dashboard/`): Self-contained Starlette app with a single `index.html` template (no frontend build step). SSE endpoint streams all domains in parallel via `asyncio.gather()`, refreshes every 30 seconds. Loads `.env` from project root on startup. `/api/aois` feeds the AOI geofence layer from the shared AOI store: it opens a fresh `AOIStore` per request (`_open_aoi_store`) because SQLite connections are thread-bound and the handler may run on a different thread than a cached store's creator; it reads stored sweep snapshots and never gathers live. Endpoint tests use Starlette's `TestClient` without the context manager so lifespan (default-path `Cache`) never runs.
 

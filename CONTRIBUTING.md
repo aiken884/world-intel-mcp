@@ -8,7 +8,7 @@ is "does it work and does it fit the existing patterns," not process.
 ```bash
 git clone https://github.com/marc-shade/world-intel-mcp.git
 cd world-intel-mcp
-pip install -e ".[dev]"
+uv sync --locked --extra dev
 ```
 
 `[dev]` pulls in `pytest`, `pytest-asyncio`, `pytest-cov`, and `respx`. If
