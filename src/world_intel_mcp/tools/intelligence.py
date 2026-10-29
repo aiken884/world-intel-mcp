@@ -33,7 +33,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="intel_country_dossier",
-        description="Comprehensive country intelligence dossier: economy (GDP/inflation), stock market, elections, sanctions, news mentions, hotspots, and conflict zones. Aggregates 6 sources in parallel.",
+        description="Country intelligence dossier: economy (GDP/inflation), stock market, elections, sanctions, news mentions, hotspots, and conflict zones.",
         inputSchema={
             "type": "object",
             "properties": {

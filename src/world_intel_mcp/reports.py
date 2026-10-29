@@ -641,15 +641,14 @@ def _build_html(data: dict[str, Any], title: str | None = None) -> str:
     body = "\n".join(sections_html)
     html_lang = "zh-Hant-TW" if get_locale() == "zh-TW" else "en"
     subtitle = t(
-        "Generated {timestamp} &mdash; World Intel MCP &mdash; 109 intelligence sources",
+        "Generated {timestamp} &mdash; World Intel MCP",
         timestamp=timestamp,
     )
     footer_name = t(
         "World Intelligence MCP Server &mdash; github.com/marc-shade/world-intel-mcp"
     )
     footer_note = t(
-        "Report generated {timestamp}. Data sourced from public APIs.",
-        timestamp=timestamp,
+        "Data sourced from public APIs."
     )
     return f"""<!DOCTYPE html>
 <html lang="{html_lang}">

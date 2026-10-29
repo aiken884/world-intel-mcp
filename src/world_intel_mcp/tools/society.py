@@ -77,7 +77,7 @@ TOOLS: list[Tool] = [
     # --- News (3 tools) ---
     Tool(
         name="intel_news_feed",
-        description="Get aggregated intelligence news from 119 RSS feeds across 24 categories. Covers geopolitics, security, tech, finance, military, science, think tanks, regional, energy, space, nuclear, climate, maritime, arctic, and more.",
+        description="Get aggregated intelligence news from RSS feeds. Filter by category.",
         inputSchema={
             "type": "object",
             "properties": {

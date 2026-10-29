@@ -23,7 +23,7 @@ TOOLS: list[Tool] = [
     # --- Conflict (3 tools) ---
     Tool(
         name="intel_acled_events",
-        description="Get armed conflict events from ACLED. Optional: country (name), days (default 7), limit (default 100). Requires ACLED_ACCESS_TOKEN.",
+        description="Get armed conflict events from ACLED. Requires ACLED_ACCESS_TOKEN.",
         inputSchema={
             "type": "object",
             "properties": {

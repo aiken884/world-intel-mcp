@@ -88,7 +88,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="intel_world_brief",
-        description="Structured daily intelligence summary: risk overview, focal areas, top story clusters, temporal anomalies, and trending threats. Comprehensive situational awareness in one call.",
+        description="Structured daily intelligence summary: risk overview, focal areas, top story clusters, temporal anomalies, and trending threats.",
         inputSchema={"type": "object", "properties": {}},
     ),
     Tool(

@@ -17,7 +17,7 @@ TOOLS: list[Tool] = [
     # --- Vector Search (3 tools) ---
     Tool(
         name="intel_semantic_search",
-        description="Semantic search across all stored intelligence data using natural language. Searches historical data accumulated from all 101+ tools. Filters: domain (e.g., 'markets', 'conflict'), category (e.g., 'Financial Markets', 'Cyber Threats'), hours (last N hours). Returns ranked results by relevance.",
+        description="Semantic search across all stored intelligence data using natural language. Filters: domain (e.g., 'markets', 'conflict'), category (e.g., 'Financial Markets'), hours.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -48,7 +48,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="intel_similar_events",
-        description="Find historically similar intelligence events or data. Given a text description, finds the most similar stored entries across all domains. Useful for pattern matching and precedent analysis.",
+        description="Given a text description, find the most similar stored entries across all domains.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -102,7 +102,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="intel_vector_stats",
-        description="Get vector store statistics: total points, collection status, embedding model info. Shows how much intelligence data has been accumulated.",
+        description="Get vector store statistics: total points, collection status, embedding model info.",
         inputSchema={"type": "object", "properties": {}},
     ),
     Tool(
@@ -144,7 +144,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="intel_domain_summary",
-        description="Summary of all intelligence data stored in the vector database. Shows per-category data point counts, unique sources, latest/earliest timestamps, and total events tracked. Answers: what intelligence do we have and how recent is it?",
+        description="Per-category point counts, unique sources, earliest/latest timestamps, and total events in the vector store.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -158,7 +158,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="intel_trend_detection",
-        description="Detect activity trends by comparing recent intelligence activity against a baseline. Identifies SURGE (>50% increase), ELEVATED (>20%), DECLINING (<-20%), and DROP (<-50%) patterns. Useful for early warning when a domain suddenly spikes or goes quiet.",
+        description="Detect activity trends by comparing recent intelligence activity against a baseline. Labels: SURGE (>50% increase), ELEVATED (>20%), DECLINING (<-20%), DROP (<-50%).",
         inputSchema={
             "type": "object",
             "properties": {
